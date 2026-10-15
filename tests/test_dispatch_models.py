@@ -1,6 +1,6 @@
 """dispatch 모델: 일자별 시간역량과 약속 시간대."""
 
-from domains.dispatch.models import Branch, Instance, Order, Worker, hhmm_to_min, slot_of
+from domains.dispatch.models import Booking, Branch, Instance, Order, Worker, hhmm_to_min, slot_of
 
 DAY = (hhmm_to_min("09:00"), hhmm_to_min("18:00"))
 
@@ -41,3 +41,19 @@ def test_work_types_and_group_defaults():
 
 def test_std_min_defaults_empty():
     assert Worker("W1", "A", ["FTTx"], [], 90, 0, 0, DAY).std_min == {}
+
+
+def test_orders_default_not_urgent_and_instance_has_no_bookings():
+    o = Order("O1", 1, "A", "install", "FTTx", "none", "house", 540, 1, 1)
+    assert o.urgent is False
+    square = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    inst = Instance(branches={"A": Branch("A", square)}, boundary_zone_km=1, workers=[], orders=[o], days=1, geo={})
+    assert inst.fixed == {} and inst.backlog() == [o]
+
+
+def test_backlog_excludes_booked_orders():
+    square = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    orders = [Order(f"O{i}", 1, "A", "install", "FTTx", "none", "house", 540, 1, 1) for i in range(3)]
+    inst = Instance(branches={"A": Branch("A", square)}, boundary_zone_km=1, workers=[], orders=orders, days=1,
+                    geo={}, fixed={"O1": Booking("W1", 1, 540)})
+    assert [o.id for o in inst.backlog()] == ["O0", "O2"]
