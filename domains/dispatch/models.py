@@ -32,6 +32,8 @@ class Worker:
     # 일자별 시간역량: 날짜 → 일할 수 있는(Y) 구간 목록. 기본 근무시간과 다른 날만 적는다 (빈 목록 = 하루 전체 N)
     capacity: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
     work_types: list[str] = field(default_factory=lambda: ["install", "repair"])   # 개통/AS 역량 (레가시 #5)
+    # 작업자별 표준작업시간 (레가시 #4): 작업유형 → 기본 소요(분). 없으면 params.duration.base_min
+    std_min: dict[str, int] = field(default_factory=dict)
     group: str = ""                                # 작업그룹 (레가시 #10). 지점 안의 묶음, 배정 범위에는 쓰지 않는다
 
     def windows(self, day: int) -> list[tuple[int, int]]:

@@ -71,7 +71,7 @@ def test_l2_uses_tools_instead_of_instance(pack, small):  # noqa: F811
     assert not first["messages"][0]["content"][0]["text"].startswith("# 인스턴스 데이터")
     second = next(c for c in llm.calls if c["item"] == "O3" and len(c["messages"]) == 3)
     result = second["messages"][2]["content"][0]
-    assert result["type"] == "tool_result" and '"duration_min": 90' in result["content"]
+    assert result["type"] == "tool_result" and '"default_duration_min": 45' in result["content"]
     assert got["O3"].metrics["llm_calls"] == 2
 
 

@@ -23,9 +23,13 @@ WORK_TYPE_LABEL = {"install": "개통", "repair": "장애"}
 PLACED_STATUSES = {"success", "pending_approval"}
 
 
-def duration_min(order: Order, params: dict) -> int:
+def duration_min(order: Order, params: dict, worker: Worker | None = None) -> int:
+    """작업소요 = 기본 소요 × 난이도 가중치 × 건물유형 가중치.
+
+    기본 소요는 작업자의 표준작업시간(작업유형별)이고, 등록이 없거나 작업자를 모르면 params.duration.base_min.
+    """
     w = params["weights"]
-    base = params["duration"]["base_min"][order.work_type]
+    base = (worker.std_min.get(order.work_type) if worker else None) or params["duration"]["base_min"][order.work_type]
     return math.ceil(base * w["difficulty"][order.difficulty] * w["building"][order.building_type])
 
 
@@ -111,7 +115,7 @@ def validate(inst: Instance, decisions: list[DecisionRecord], params: dict) -> l
         if cert and cert not in worker.certs:
             violations.append(Violation(d.item_id, "cert_required",
                                         f"{worker.id}는 {cert} 자격이 없음"))
-        end = start + duration_min(order, params)
+        end = start + duration_min(order, params, worker)
         windows = worker.windows(order.day)
         if not any(a0 <= start and end <= a1 for a0, a1 in windows):
             violations.append(Violation(
@@ -195,10 +199,10 @@ def stage_slots(inst: Instance, order: Order, stage: int, certified: list[Worker
     params = effective_params(inst, order, params)
     window = params["matching"]["time_window_min"][stage - 1]
     ext = params["matching"]["area_extension_km"][stage - 1]
-    dur = duration_min(order, params)
     in_area = [w for w in certified if inst.distance_outside(w.branch, order.x, order.y) <= ext]
     lo, hi = start_range(order, window, params)
-    return [s for w in in_area if (s := _best_slot(w, order, dur, lo, hi, jobs_of(w), params))]
+    return [s for w in in_area
+            if (s := _best_slot(w, order, duration_min(order, params, w), lo, hi, jobs_of(w), params))]
 
 
 def pick(slots: list[Slot], params: dict) -> Slot:
@@ -231,7 +235,8 @@ def schedules_from(inst: Instance, decisions: list[DecisionRecord], params: dict
         start = parse_start(d.decision)
         if order is None or worker_id not in inst.worker_index or start is None:
             continue
-        schedules[(worker_id, order.day)].append(Job(start, start + duration_min(order, params), order))
+        worker = inst.worker_index[worker_id]
+        schedules[(worker_id, order.day)].append(Job(start, start + duration_min(order, params, worker), order))
     for jobs in schedules.values():
         jobs.sort(key=lambda j: j.start)
     return schedules
@@ -240,7 +245,6 @@ def schedules_from(inst: Instance, decisions: list[DecisionRecord], params: dict
 def _assign_one(inst: Instance, order: Order, params: dict,
                 schedules: dict[str, list[Job]]) -> DecisionRecord:
     params = effective_params(inst, order, params)
-    dur = duration_min(order, params)
     pool, skilled, capable, certified = eligible_workers(inst, order)
     cert = REQUIRED_CERT.get(order.difficulty)
     kind = WORK_TYPE_LABEL.get(order.work_type, order.work_type)
@@ -264,6 +268,7 @@ def _assign_one(inst: Instance, order: Order, params: dict,
             continue
         chosen = pick(slots, params)
         w = chosen.worker
+        dur = duration_min(order, params, w)
         schedules[w.id].append(Job(chosen.start, chosen.start + dur, order))
         schedules[w.id].sort(key=lambda j: j.start)
         grade = "명장" if w.cei >= threshold else "일반"
@@ -293,7 +298,8 @@ def _assign_one(inst: Instance, order: Order, params: dict,
                      f"{funnel}. 관할 밖 {outside:.1f}km로 최대 완화(+{ext}km) 범위를 벗어남")
     lo, hi = start_range(order, window, params)
     fits_availability = [w for w in in_area
-                         if any(max(lo, a0) <= min(hi, a1 - dur) for a0, a1 in w.windows(order.day))]
+                         if any(max(lo, a0) <= min(hi, a1 - duration_min(order, params, w))
+                                for a0, a1 in w.windows(order.day))]
     if fits_availability:
         return _fail(inst, order, "CAPACITY",
                      f"{funnel}. 희망 시간대 ±{window}분에 시간역량이 있는 {len(fits_availability)}명의 일정이 모두 참")

@@ -6,7 +6,7 @@
 #   fixed(고정값) / governance(승인 조건 같은 통제 설정). 없으면 policy. bounds·docs·kinds는 개선안으로 바꿀 수 없다.
 # 변경이 승인되면 version을 올리고 git 커밋으로 남긴다.
 
-version: 2
+version: 3
 
 appointment:                    # 고객 약속은 1시간 방문창: 실제 시작 시각이 속한 시간대가 약속이다
   slot_min: 60
@@ -24,10 +24,10 @@ matching:                       # 시간·지역 3단계 매칭. 인덱스 0/1/2
   bounds: {time_window_min: [0, 180], area_extension_km: [0, 5]}
   kinds: {time_window_min: policy, area_extension_km: policy}
 
-duration:                       # 작업소요 = 작업유형 기본 소요 × 난이도 가중치 × 건물유형 가중치
-  base_min: {install: 60, repair: 45}
+duration:                       # 작업소요 = 기본 소요(작업자 표준작업시간, 없으면 base_min) × 난이도 가중치 × 건물유형 가중치
+  base_min: {install: 30, repair: 20}
   docs:
-    base_min: 작업유형별 기본 소요(분). install=개통, repair=장애
+    base_min: 작업유형별 기본 소요(분). install=개통, repair=장애. 작업자 표준작업시간이 등록되어 있으면 그 값을 쓰고, 없을 때만 이 값
   bounds: {base_min: [15, 180]}
   kinds: {base_min: estimate}             # 실제 작업이 빨리 끝난다고 가정하는 것일 뿐이라 개선안이 바꿀 수 없다
 

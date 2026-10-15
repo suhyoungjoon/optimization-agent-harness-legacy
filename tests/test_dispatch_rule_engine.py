@@ -13,6 +13,8 @@ from domains.dispatch.models import Branch, Instance, Order, Worker, hhmm_to_min
 PARAMS = yaml.safe_load(
     (Path(__file__).resolve().parent.parent / "domains" / "dispatch" / "params.yaml").read_text(encoding="utf-8"))
 DAY = (hhmm_to_min("09:00"), hhmm_to_min("18:00"))
+# 작업자 표준작업시간 (손으로 계산하기 쉬운 값: 개통 60분, 장애 45분)
+STD = {"install": 60, "repair": 45}
 # W2의 1일차 시간역량: 12~13시 N (할당제한반복일정)
 W2_DAY1 = [(hhmm_to_min("09:00"), hhmm_to_min("12:00")), (hhmm_to_min("13:00"), hhmm_to_min("18:00"))]
 
@@ -25,8 +27,8 @@ def order(oid, desired, x, y, media="FTTx", difficulty="none", work_type="instal
 @pytest.fixture
 def small():
     workers = [
-        Worker("W1", "A", ["FTTx"], [], 90, 2, 2, DAY),              # 명장
-        Worker("W2", "A", ["FTTx", "HFC"], ["pole"], 60, 8, 8, DAY, capacity={1: W2_DAY1}),
+        Worker("W1", "A", ["FTTx"], [], 90, 2, 2, DAY, std_min=STD),              # 명장
+        Worker("W2", "A", ["FTTx", "HFC"], ["pole"], 60, 8, 8, DAY, capacity={1: W2_DAY1}, std_min=STD),
     ]
     orders = [
         order("O1", "09:00", 2, 3),                                  # W1, 1단계
@@ -173,6 +175,24 @@ def test_solve_reports_no_work_type(small):
 def test_funnel_lists_work_type_step(small):
     got = by_id(rule_engine.solve(small, PARAMS))
     assert "FTTx 기술 2명 → 개통 역량 2명" in got["O1"].evidence
+
+
+def test_duration_uses_worker_standard_time(small):
+    o = small.order_index["O3"]                                   # 개통·승주·주택: 기본 × 1.5
+    w1, w2 = small.workers
+    w2.std_min = {"install": 40, "repair": 30}
+    assert rule_engine.duration_min(o, PARAMS, w2) == 60          # 40 × 1.5
+    assert rule_engine.duration_min(o, PARAMS, w1) == 90          # 60 × 1.5
+    w1.std_min = {}
+    assert rule_engine.duration_min(o, PARAMS, w1) == PARAMS["duration"]["base_min"]["install"] * 1.5
+    assert rule_engine.duration_min(o, PARAMS) == PARAMS["duration"]["base_min"]["install"] * 1.5
+
+
+def test_validate_uses_assigned_workers_duration(small):
+    small.worker_index["W2"].std_min = {"install": 100, "repair": 45}     # O1(개통 주택) 100분
+    # W2 10:30 시작 → 12:10 종료: 12~13시 N에 걸림. 60분이면 11:30에 끝나 문제없음
+    assert [v.rule for v in rule_engine.validate(small, [decide("O1", "W2", "10:30")], PARAMS)] == [
+        "outside_availability"]
 
 
 def test_solve_is_deterministic():

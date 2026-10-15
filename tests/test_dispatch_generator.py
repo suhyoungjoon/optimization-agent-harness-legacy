@@ -29,7 +29,7 @@ def test_scale(base):
     assert len(inst.workers) == 30
     assert {w.branch for w in inst.workers} == {"A", "B", "C"}
     assert all(sum(w.branch == b for w in inst.workers) == 10 for b in "ABC")
-    assert len(inst.orders) == 185 * 10
+    assert len(inst.orders) == 380 * 10
     assert len({o.id for o in inst.orders}) == len(inst.orders)
     assert all(w.skills for w in inst.workers)
 
@@ -186,3 +186,19 @@ def test_faults_leave_work_types_and_groups_untouched(base):
     inst, _ = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
     attrs = lambda i: {w.id: (w.work_types, w.group) for w in i.workers}  # noqa: E731
     assert attrs(inst) == attrs(base[0])
+
+
+# --- 작업자별 표준작업시간 (#4) -----------------------------------------------------
+
+def test_every_worker_has_standard_times_around_base(base):
+    inst, _ = base
+    for w in inst.workers:
+        assert set(w.std_min) == {"install", "repair"}
+        assert 25 <= w.std_min["install"] <= 35 and 15 <= w.std_min["repair"] <= 25
+        assert all(v % 5 == 0 for v in w.std_min.values())
+    assert len({w.std_min["install"] for w in inst.workers}) >= 2          # 작업자마다 다름
+
+
+def test_faults_leave_standard_times_untouched(base):
+    inst, _ = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
+    assert {w.id: w.std_min for w in inst.workers} == {w.id: w.std_min for w in base[0].workers}

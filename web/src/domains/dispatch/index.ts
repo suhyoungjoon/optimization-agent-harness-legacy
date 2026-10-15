@@ -15,7 +15,7 @@ export const dispatchAdapter: DomainAdapter = {
     fieldLabels: {
       id: "ID", name: "이름", day: "날짜", branch: "지점", work_type: "작업유형", media: "매체", difficulty: "난이도",
       building_type: "건물유형", desired: "희망시간", x: "x(km)", y: "y(km)", skills: "기술", certs: "자격", cei: "CEI",
-      work_types: "개통/AS 역량", group: "작업그룹",
+      work_types: "개통/AS 역량", group: "작업그룹", std_min: "표준작업시간",
       available: "근무시간", capacity: "시간역량(일자별)",
     },
     format: (_table, field, value) => {
@@ -27,6 +27,8 @@ export const dispatchAdapter: DomainAdapter = {
           ? days.map(([d, ws]) => `${d}일 ${ws.map(([s, e]) => `${hhmm(s)}~${hhmm(e)}`).join(", ") || "N"}`).join(" / ")
           : "근무시간과 같음";
       }
+      if (field === "std_min" && value && typeof value === "object" && !Array.isArray(value))
+        return Object.entries(value as Record<string, number>).map(([t, m]) => `${LABELS[t] ?? t} ${m}분`).join(", ");
       if (field === "work_types" && Array.isArray(value)) return value.map((v) => LABELS[v] ?? v).join(", ");
       if (field === "certs" && Array.isArray(value)) return value.map((v) => LABELS[v] ?? v).join(", ") || "없음";
       if (["work_type", "difficulty", "building_type"].includes(field) && typeof value === "string")
