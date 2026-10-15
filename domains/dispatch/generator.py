@@ -1,17 +1,22 @@
-"""가상 데이터 생성과 결함(P1~P5) 주입.
+"""가상 데이터 생성, 결함(P1~P5) 주입, 레가시 예약 흉내(기할당/미예약).
 
 같은 seed면 같은 데이터가 나온다. 기본 데이터와 각 결함은 서로 다른 난수열을 쓰므로,
 결함을 켜고 꺼도 나머지 데이터는 그대로다 (전후 비교가 공정해진다).
 """
 
+import copy
 import json
 import math
 import random
+from collections import defaultdict
 from pathlib import Path
 
 import yaml
 
-from .models import Branch, Instance, Order, Worker, hhmm_to_min, inside_polygon
+from core.registry import domain_file
+
+from . import rule_engine
+from .models import Booking, Branch, Instance, Order, Worker, hhmm_to_min, inside_polygon
 
 PACK_DIR = Path(__file__).resolve().parent
 MEDIA = ["HFC", "FTTx", "CATV"]
@@ -270,6 +275,38 @@ def _inject_p5(rng, inst: Instance, spec: dict, cfg: dict):
     return [], sorted(affected)
 
 
+# --- 예약 흉내 (레가시 #6 기할당) ---------------------------------------------------
+
+def _make_urgent(rng: random.Random, cfg: dict, orders: list[Order]) -> None:
+    for o in rng.sample(orders, round(len(orders) * cfg["urgent_share"])):
+        o.urgent = True
+
+
+def _reserve(inst: Instance, cfg: dict) -> None:
+    """지시서가 생긴 순서(날짜 → ID)대로 희망일·희망 시간대·소속 관할 안에서만 예약을 시도한다.
+
+    예약된 건은 기할당(inst.fixed)이 되고, 실패한 건이 에이전트가 배정할 미예약 건이다.
+    작업소요·이동시간 추정값은 커밋된 params.yaml에서 읽는다 (정책 값·구간 조건은 쓰지 않아 개선안이 바꿔도 같다).
+    """
+    params = yaml.safe_load(domain_file("dispatch", "params.yaml", PACK_DIR).read_text(encoding="utf-8"))
+    rp = copy.deepcopy(params)
+    rp["matching"] = {"time_window_min": [cfg["reservation"]["time_window_min"]],
+                      "area_extension_km": [cfg["reservation"]["area_extension_km"]]}
+    rp["overrides"] = {"rules": []}
+    schedules: dict[tuple[str, int], list] = defaultdict(list)
+    for o in sorted(inst.orders, key=lambda o: (o.day, o.id)):
+        *_, certified = rule_engine.eligible_workers(inst, o)
+        slots = rule_engine.stage_slots(inst, o, 1, certified, lambda w, d: schedules[(w.id, d)], rp, o.day)
+        if not slots:
+            continue
+        chosen = min(slots, key=lambda s: (s.travel, s.worker.id))
+        w = chosen.worker
+        schedules[(w.id, o.day)].append(
+            rule_engine.Job(chosen.start, chosen.start + rule_engine.duration_min(o, rp, w), o))
+        schedules[(w.id, o.day)].sort(key=lambda j: j.start)
+        inst.fixed[o.id] = Booking(w.id, o.day, chosen.start)
+
+
 INJECTORS = {"P1": _inject_p1, "P2": _inject_p2, "P3": _inject_p3, "P4": _inject_p4, "P5": _inject_p5}
 
 
@@ -286,6 +323,7 @@ def generate(seed: int, faults: list[str]) -> tuple[Instance, dict]:
     orders = _make_orders(rng, cfg, branches)
     _make_capacity(random.Random(f"{seed}-capacity"), cfg, workers, cfg["days"])
     _make_roles(random.Random(f"{seed}-roles"), cfg, workers)
+    _make_urgent(random.Random(f"{seed}-urgent"), cfg, orders)
     inst = Instance(branches=branches, boundary_zone_km=cfg["boundary_zone_km"],
                     workers=workers, orders=orders, days=cfg["days"], geo=geo)
 
@@ -300,4 +338,7 @@ def generate(seed: int, faults: list[str]) -> tuple[Instance, dict]:
             "affected_items": sorted(items),
             "affected_workers": worker_ids,
         }
+    # 결함까지 반영된 데이터로 예약을 흉내 낸다: 결함 구간은 예약이 더 많이 실패해 미예약으로 남는다
+    _reserve(inst, cfg)
+    truth["reservation"] = {"booked": len(inst.fixed), "backlog": len(inst.backlog())}
     return inst, truth

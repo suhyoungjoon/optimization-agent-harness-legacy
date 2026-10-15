@@ -13,21 +13,25 @@ from .models import Instance, min_to_hhmm
 
 _ORDER_ID = {"type": "string", "description": "지시서 ID (예: D01-O015)"}
 _WORKER_ID = {"type": "string", "description": "작업자 ID (예: WA03)"}
+_DAY = {"type": "integer", "minimum": 1, "description": "날짜(일). 생략하면 지시서 희망일"}
 
 TOOL_SPECS = [
     {
         "name": "get_order",
-        "description": "지시서의 소속 지점, 작업유형, 매체, 난이도, 건물유형, 희망시간, 좌표, 기본 작업소요(분), 필요한 자격을 돌려준다. "
+        "description": "지시서의 소속 지점, 희망일(day)·희망시간, 긴급 여부, 늦출 수 있는 배정일 범위, 작업유형, 매체, 난이도, 건물유형, "
+                       "좌표, 기본 작업소요(분), 필요한 자격을 돌려준다. "
                        "실제 작업소요는 작업자 표준작업시간에 따라 다르며 find_candidates가 후보별로 돌려준다.",
         "input_schema": {"type": "object", "properties": {"order_id": _ORDER_ID}, "required": ["order_id"]},
     },
     {
         "name": "find_candidates",
-        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·개통/AS 역량·자격)과 시간·지역 범위를 만족하고 그날 시간역량과 일정에 "
-                       "들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간, 그 작업자 기준 작업소요(분)를 돌려준다. 1단계부터 조회한다.",
+        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·개통/AS 역량·자격)과 시간·지역 범위를 만족하고 그날(day) 시간역량과 "
+                       "일정(기할당 포함)에 들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간, 그 작업자 기준 작업소요(분)를 "
+                       "돌려준다. 희망일 1단계부터 조회하고, 희망일 3단계까지 후보가 없을 때만 다음 날을 조회한다.",
         "input_schema": {
             "type": "object",
-            "properties": {"order_id": _ORDER_ID, "stage": {"type": "integer", "minimum": 1, "maximum": 3}},
+            "properties": {"order_id": _ORDER_ID, "stage": {"type": "integer", "minimum": 1, "maximum": 3},
+                           "day": _DAY},
             "required": ["order_id", "stage"],
         },
     },
@@ -43,8 +47,10 @@ TOOL_SPECS = [
     {
         "name": "get_worker_schedule",
         "description": "작업자의 작업그룹, 기술, 개통/AS 역량(work_types), 표준작업시간(std_min: 작업유형별 기본 소요), 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
-                       "(capacity: 일할 수 있는 구간 목록, 작업은 한 구간 안에서 시작·종료)과 그날 이미 배정된 작업 일정을 돌려준다.",
-        "input_schema": {"type": "object", "properties": {"worker_id": _WORKER_ID}, "required": ["worker_id"]},
+                       "(capacity: 일할 수 있는 구간 목록, 작업은 한 구간 안에서 시작·종료)과 그날 일정(fixed=true는 예약으로 잡힌 기할당)을 "
+                       "돌려준다. day를 주면 그 날짜 기준.",
+        "input_schema": {"type": "object", "properties": {"worker_id": _WORKER_ID, "day": _DAY},
+                         "required": ["worker_id"]},
     },
     {
         "name": "check_assignment",
@@ -55,6 +61,7 @@ TOOL_SPECS = [
                 "order_id": _ORDER_ID,
                 "worker_id": _WORKER_ID,
                 "start_time": {"type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$"},
+                "day": _DAY,
             },
             "required": ["order_id", "worker_id", "start_time"],
         },
@@ -77,6 +84,18 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             raise ToolError(f"알 수 없는 작업자: {worker_id}")
         return worker
 
+    def day_or_error(o, value):
+        if value is None:
+            return o.day
+        allowed = rule_engine.candidate_days(inst, o, params)
+        try:
+            day = int(value)
+        except (TypeError, ValueError):
+            raise ToolError(f"day는 정수: {value}") from None
+        if day not in allowed:
+            raise ToolError(f"{o.id}의 배정일은 {allowed[0]}~{allowed[-1]}일")
+        return day
+
     def get_order(args: dict, ctx: ToolContext):
         o = order_or_error(args.get("order_id"))
         return {
@@ -85,6 +104,8 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             "desired_time": min_to_hhmm(o.desired), "x": o.x, "y": o.y,
             # 작업소요는 작업자 표준작업시간에 따라 다르다. 여기서는 기본 소요 기준, 후보별 값은 find_candidates
             "default_duration_min": rule_engine.duration_min(o, params),
+            "urgent": o.urgent,
+            "allowed_days": rule_engine.candidate_days(inst, o, params),
             "required_cert": rule_engine.REQUIRED_CERT.get(o.difficulty),
             "outside_jurisdiction_km": round(inst.distance_outside(o.branch, o.x, o.y), 2),
         }
@@ -95,12 +116,14 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
         if not 1 <= stage <= len(params["matching"]["time_window_min"]):
             raise ToolError(f"stage는 1~{len(params['matching']['time_window_min'])}")
         pool, skilled, capable, certified = rule_engine.eligible_workers(inst, o)
+        day = day_or_error(o, args.get("day"))
         schedules = rule_engine.schedules_from(inst, ctx.decisions, params, exclude=o.id)
         slots = rule_engine.stage_slots(inst, o, stage, certified,
-                                        lambda w: schedules.get((w.id, o.day), []), params)
+                                        lambda w, dd: schedules.get((w.id, dd), []), params, day)
         threshold = rule_engine.effective_params(inst, o, params)["cei"]["master_threshold"]
         return {
             "stage": stage,
+            "day": day,
             "time_window_min": params["matching"]["time_window_min"][stage - 1],
             "area_extension_km": params["matching"]["area_extension_km"][stage - 1],
             "funnel": {"branch": len(pool), "skilled": len(skilled), "work_type": len(capable),
@@ -125,7 +148,7 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
     def get_worker_schedule(args: dict, ctx: ToolContext):
         w = worker_or_error(args.get("worker_id"))
         current = inst.order_index.get(ctx.item_id)
-        day = current.day if current else 1
+        day = int(args["day"]) if args.get("day") is not None else (current.day if current else 1)
         jobs = rule_engine.schedules_from(inst, ctx.decisions, params).get((w.id, day), [])
         return {
             "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,
@@ -135,14 +158,15 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             "day": day,
             "capacity": [[min_to_hhmm(s), min_to_hhmm(e)] for s, e in w.windows(day)],
             "jobs": [{"order_id": j.order.id, "start": min_to_hhmm(j.start), "end": min_to_hhmm(j.end),
-                      "x": j.order.x, "y": j.order.y} for j in jobs],
+                      "x": j.order.x, "y": j.order.y, "fixed": j.fixed} for j in jobs],
         }
 
     def check_assignment(args: dict, ctx: ToolContext):
         o = order_or_error(args.get("order_id"))
         candidate = DecisionRecord(
             item_id=o.id,
-            decision={"worker_id": args.get("worker_id"), "start_time": args.get("start_time")},
+            decision={"worker_id": args.get("worker_id"), "start_time": args.get("start_time"),
+                      **({"day": args["day"]} if args.get("day") is not None else {})},
             status="success", reason_code=None, evidence="", dims={})
         others = [d for d in ctx.decisions if d.item_id != o.id]
         # 겹침 위반은 늦게 시작하는 작업에 붙으므로, 후보를 넣기 전후를 비교해 새로 생긴 위반을 모두 본다

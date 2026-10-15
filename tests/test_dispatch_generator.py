@@ -29,7 +29,7 @@ def test_scale(base):
     assert len(inst.workers) == 30
     assert {w.branch for w in inst.workers} == {"A", "B", "C"}
     assert all(sum(w.branch == b for w in inst.workers) == 10 for b in "ABC")
-    assert len(inst.orders) == 380 * 10
+    assert len(inst.orders) == 240 * 10
     assert len({o.id for o in inst.orders}) == len(inst.orders)
     assert all(w.skills for w in inst.workers)
 
@@ -67,7 +67,8 @@ def test_p2_concentrates_pole_certs(base):
     inst, truth = generate(SEED, ["P2"])
     holders = [w for w in inst.workers if "pole" in w.certs]
     assert len(holders) == sum("pole" in w.certs for w in base[0].workers)
-    assert sum(w.branch == "A" for w in holders) / len(holders) >= 0.8
+    # 자격자의 90%를 A로 보내려 하지만 A는 10명뿐이라 A 전원이 자격자가 되고 나머지는 B로 간다
+    assert sum(w.branch == "A" for w in holders) == min(10, round(len(holders) * 0.9))
     assert not any(w.branch == "C" for w in holders)
     assert truth["faults"]["P2"]["affected_workers"] == sorted(w.id for w in holders)
 
@@ -202,3 +203,44 @@ def test_every_worker_has_standard_times_around_base(base):
 def test_faults_leave_standard_times_untouched(base):
     inst, _ = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
     assert {w.id: w.std_min for w in inst.workers} == {w.id: w.std_min for w in base[0].workers}
+
+
+# --- 예약 흉내: 기할당(#6)과 미예약, 긴급(#1) --------------------------------------
+
+def test_reservation_books_most_orders_and_leaves_a_backlog(base):
+    inst, truth = base
+    share = len(inst.backlog()) / len(inst.orders)
+    assert 0.10 <= share <= 0.20
+    assert truth["reservation"] == {"booked": len(inst.fixed), "backlog": len(inst.backlog())}
+
+
+def test_bookings_are_feasible_and_on_desired_slot(base):
+    """기할당은 희망일·희망 시간대·소속 지점 작업자로만 잡혔고, 서로 겹치지 않으며 필수조건을 지킨다."""
+    inst, _ = base
+    from core.interfaces import DecisionRecord
+    from domains.dispatch import rule_engine
+    from domains.dispatch.models import Instance, min_to_hhmm
+    from domains.dispatch.pack import get_pack
+    params = get_pack().params
+    for oid, b in inst.fixed.items():
+        o = inst.order_index[oid]
+        assert b.day == o.day and b.start // 60 == o.desired // 60
+        assert inst.worker_index[b.worker_id].branch == o.branch
+    loose = Instance(branches=inst.branches, boundary_zone_km=inst.boundary_zone_km, workers=inst.workers,
+                     orders=inst.orders, days=inst.days, geo=inst.geo)        # 기할당을 결정으로 바꿔 검증
+    decisions = [DecisionRecord(oid, {"worker_id": b.worker_id, "day": b.day, "start_time": min_to_hhmm(b.start)},
+                                "success", None, "", {}) for oid, b in inst.fixed.items()]
+    assert rule_engine.validate(loose, decisions, params) == []
+
+
+def test_some_orders_are_urgent(base):
+    inst, _ = base
+    share = sum(o.urgent for o in inst.orders) / len(inst.orders)
+    assert 0.03 <= share <= 0.07
+
+
+def test_faults_push_orders_into_backlog(base):
+    inst, _ = generate(SEED, ["P1"])
+    b_morning = lambda i: [o for o in i.orders if o.branch == "B" and 9 <= o.desired // 60 < 11]  # noqa: E731
+    unbooked = lambda i: sum(o.id not in i.fixed for o in b_morning(i)) / len(b_morning(i))  # noqa: E731
+    assert unbooked(inst) >= unbooked(base[0]) + 0.1

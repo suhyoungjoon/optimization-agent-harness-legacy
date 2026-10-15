@@ -32,14 +32,15 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
             if (branch and w.branch != branch) or (group and w.group != group):
                 continue
             jobs = [d for d in placed if d.decision.get("worker_id") == w.id]
-            busy = sum(duration_min(inst.order_index[d.item_id], params, w) for d in jobs)
+            booked = [oid for oid, b in inst.fixed.items() if b.worker_id == w.id]
+            busy = sum(duration_min(inst.order_index[i], params, w) for i in [d.item_id for d in jobs] + booked)
             available = sum(e - s for d in day_list for s, e in w.windows(d))
             rows.append({
                 "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,
                 "work_types": w.work_types, "certs": w.certs, "cei": w.cei,
                 "available": f"{min_to_hhmm(w.available[0])}-{min_to_hhmm(w.available[1])}",
                 "capacity": _capacity_summary(w, day_list),
-                "jobs": len(jobs), "busy_min": busy, "available_min": available,
+                "jobs": len(jobs), "booked_jobs": len(booked), "busy_min": busy, "available_min": available,
                 "utilization": round(busy / available, 3) if available else 0.0,
             })
         sort_by = args.get("sort_by") or "busy_min"
@@ -55,15 +56,18 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
     def demand_by_hour(args: dict):
         branch = args.get("branch")
         orders = [o for o in inst.orders if not branch or o.branch == branch]
+        booked = [o for o in orders if o.id in inst.fixed]
+        orders = [o for o in orders if o.id not in inst.fixed]
         workers = [w for w in inst.workers if not branch or w.branch == branch]
         status = {d.item_id: d.status for d in decisions}
         rows = []
-        for hour in sorted({o.desired // 60 for o in orders}):
+        for hour in sorted({o.desired // 60 for o in orders + booked}):
             in_hour = [o for o in orders if o.desired // 60 == hour]
             start = hour * 60
             rows.append({
                 "hour": f"{hour:02d}",
-                "orders": len(in_hour),
+                "booked": sum(o.desired // 60 == hour for o in booked),   # 예약으로 이미 잡힌 지시서
+                "orders": len(in_hour),                                    # 예약 안 된(배정 대상) 지시서
                 "assigned": sum(status.get(o.id) == "success" for o in in_hour),
                 "unassigned": sum(status.get(o.id) not in (None, "success") for o in in_hour),
                 # 그 약속 시간대에 시간역량이 조금이라도 있는 작업자 수 (날짜 평균)
@@ -76,7 +80,7 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
         {
             "name": "worker_stats",
             "description": "작업자별 작업그룹, 개통/AS 역량(work_types), 기본 근무시간(available), 일자별 시간역량 요약(capacity: 일할 수 있는 구간별 일수), "
-                           "처리 건수, 작업시간(분), 시간역량 합계(분), 활용률(작업시간/본인 시간역량 합계). "
+                           "배정 건수(jobs), 기할당 건수(booked_jobs), 작업시간(분, 기할당 포함), 시간역량 합계(분), 활용률(작업시간/본인 시간역량 합계). "
                            "sort_by 기준 오름차순(기본: 작업시간이 적은 순).",
             "input_schema": {"type": "object", "properties": {
                 "branch": _BRANCH, "group": _GROUP, "limit": {"type": "integer", "minimum": 1, "maximum": 30},
@@ -85,7 +89,7 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
         },
         {
             "name": "demand_by_hour",
-            "description": "희망시간(시)별 지시서 수, 배정·미배정 수, 그 약속 시간대에 시간역량이 있는 작업자 수(날짜 평균).",
+            "description": "희망시간(시)별 예약된(기할당) 지시서 수(booked), 예약 안 된 지시서 수(orders)와 그중 배정·미배정 수, 그 약속 시간대에 시간역량이 있는 작업자 수(날짜 평균).",
             "input_schema": {"type": "object", "properties": {"branch": _BRANCH}},
             "handler": demand_by_hour,
         },
