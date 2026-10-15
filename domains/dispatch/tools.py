@@ -22,8 +22,8 @@ TOOL_SPECS = [
     },
     {
         "name": "find_candidates",
-        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·자격)과 시간·지역 범위를 만족하고 일정에 들어갈 수 있는 "
-                       "후보 작업자와 각자의 가장 이른 적합 시작 시각, 이동시간을 돌려준다. 1단계부터 조회한다.",
+        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·자격)과 시간·지역 범위를 만족하고 그날 시간역량과 일정에 "
+                       "들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간을 돌려준다. 1단계부터 조회한다.",
         "input_schema": {
             "type": "object",
             "properties": {"order_id": _ORDER_ID, "stage": {"type": "integer", "minimum": 1, "maximum": 3}},
@@ -41,7 +41,8 @@ TOOL_SPECS = [
     },
     {
         "name": "get_worker_schedule",
-        "description": "작업자의 기술, 자격, CEI, 가능시간과 지금 처리 중인 지시서 날짜에 이미 배정된 작업 일정을 돌려준다.",
+        "description": "작업자의 기술, 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
+                       "(capacity: 일할 수 있는 구간 목록, 작업은 한 구간 안에서 시작·종료)과 그날 이미 배정된 작업 일정을 돌려준다.",
         "input_schema": {"type": "object", "properties": {"worker_id": _WORKER_ID}, "required": ["worker_id"]},
     },
     {
@@ -127,6 +128,7 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             "master": w.cei >= params["cei"]["master_threshold"],
             "available": [min_to_hhmm(w.available[0]), min_to_hhmm(w.available[1])],
             "day": day,
+            "capacity": [[min_to_hhmm(s), min_to_hhmm(e)] for s, e in w.windows(day)],
             "jobs": [{"order_id": j.order.id, "start": min_to_hhmm(j.start), "end": min_to_hhmm(j.end),
                       "x": j.order.x, "y": j.order.y} for j in jobs],
         }

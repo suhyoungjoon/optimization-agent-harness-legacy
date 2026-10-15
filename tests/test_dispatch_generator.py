@@ -29,7 +29,7 @@ def test_scale(base):
     assert len(inst.workers) == 30
     assert {w.branch for w in inst.workers} == {"A", "B", "C"}
     assert all(sum(w.branch == b for w in inst.workers) == 10 for b in "ABC")
-    assert len(inst.orders) == 150 * 10
+    assert len(inst.orders) == 185 * 10
     assert len({o.id for o in inst.orders}) == len(inst.orders)
     assert all(w.skills for w in inst.workers)
 
@@ -85,3 +85,76 @@ def test_p4_moves_orders_outside_jurisdiction():
     assert len(outside) / len(inst.orders) > 0.1
     assert {o.id for o in outside} <= set(truth["faults"]["P4"]["affected_items"])
     assert all(inst.area_zone(o) == "boundary" for o in outside)
+
+
+# --- 일자별 시간역량 (레가시 #2, #8, #9) -------------------------------------------
+
+def _inside(windows, base):
+    return all(base[0] <= s < e <= base[1] for s, e in windows)
+
+
+def test_desired_times_are_hourly(base):
+    inst, _ = base
+    assert all(o.desired % 60 == 0 for o in inst.orders)
+
+
+def test_base_capacity_mixes_blocks_and_reductions(base):
+    inst, _ = base
+    varied = [w for w in inst.workers if w.capacity]
+    assert 2 <= len(varied) <= 12                                    # 일부 작업자만
+    for w in varied:
+        for day, windows in w.capacity.items():
+            assert 1 <= day <= inst.days
+            assert windows != [w.available]                          # 기본 근무시간과 다른 날만 적는다
+            assert _inside(windows, w.available)                     # 늘어나는 쪽은 연동하지 않는다
+            assert all(s % 30 == 0 and e % 30 == 0 for s, e in windows)
+    days = [ws for w in varied for ws in w.capacity.values()]
+    assert any(len(ws) == 2 for ws in days)                          # #8 반복 제한: 하루 중간이 N
+    assert any(len(ws) == 1 for ws in days)                          # #9 근무시간 축소: 앞이나 뒤가 N
+
+
+def test_hours_reduction_applies_from_change_day_on(base):
+    inst, _ = base
+    reduced = [w for w in inst.workers
+               if any(len(ws) == 1 and ws[0] != w.available for ws in w.capacity.values())]
+    assert reduced
+    for w in reduced:
+        first = min(d for d, ws in w.capacity.items() if len(ws) == 1)
+        later = [w.windows(d) for d in range(first, inst.days + 1)]
+        # 변경일 이후에는 매일 줄어든 시간 (반복 제한이 겹친 날은 더 줄어들 수 있다)
+        assert all(sum(e - s for s, e in ws) < w.available[1] - w.available[0] for ws in later)
+
+
+def test_faults_leave_base_capacity_untouched(base):
+    inst, _ = generate(SEED, ["P1", "P2", "P4"])
+    assert {w.id: w.capacity for w in inst.workers} == {w.id: w.capacity for w in base[0].workers}
+
+
+def test_p5_hides_nine_oclock_capacity(base):
+    inst, truth = generate(SEED, ["P5"])
+    hidden = set(truth["faults"]["P5"]["affected_workers"])
+    assert len(hidden) == 7 and all(inst.worker_index[w].branch == "A" for w in hidden)
+    nine, ten = hhmm_to_min("09:00"), hhmm_to_min("10:00")
+    for w in inst.workers:
+        covers_nine = [any(s <= nine and ten <= e for s, e in w.windows(d)) for d in range(1, inst.days + 1)]
+        if w.id in hidden:
+            assert w.available == base[0].worker_index[w.id].available    # 근무시간은 09시 출근 그대로
+            assert not any(covers_nine)                                      # 시간역량은 매일 09~10시 N
+        else:
+            assert w.capacity == base[0].worker_index[w.id].capacity
+
+
+def test_p3_clips_daily_capacity_to_new_hours():
+    inst, truth = generate(SEED, ["P3"])
+    for wid in truth["faults"]["P3"]["affected_workers"]:
+        w = inst.worker_index[wid]
+        assert all(_inside(w.windows(d), w.available) for d in range(1, inst.days + 1))
+
+
+def test_p5_truth_skips_workers_p3_already_moved_to_afternoon():
+    inst, truth = generate(SEED, ["P3", "P5"])
+    p3 = set(truth["faults"]["P3"]["affected_workers"])
+    p5 = set(truth["faults"]["P5"]["affected_workers"])
+    alone = set(generate(SEED, ["P5"])[1]["faults"]["P5"]["affected_workers"])
+    assert p5 == alone - p3                            # 09시 시간역량이 원래 없던 작업자는 정답이 아니다
+    assert alone & p3                                  # seed 42에서는 실제로 겹친다

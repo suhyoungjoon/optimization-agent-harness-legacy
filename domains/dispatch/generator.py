@@ -1,4 +1,4 @@
-"""가상 데이터 생성과 결함(P1~P4) 주입.
+"""가상 데이터 생성과 결함(P1~P5) 주입.
 
 같은 seed면 같은 데이터가 나온다. 기본 데이터와 각 결함은 서로 다른 난수열을 쓰므로,
 결함을 켜고 꺼도 나머지 데이터는 그대로다 (전후 비교가 공정해진다).
@@ -115,6 +115,51 @@ def _make_orders(rng: random.Random, cfg: dict, branches: dict) -> list[Order]:
     return orders
 
 
+# --- 일자별 시간역량 (레가시 #2, #8, #9) -----------------------------------------
+# 구간은 [시작, 종료) 분. 기본 근무시간과 같은 날은 적지 않는다 (Worker.windows가 기본 근무시간을 돌려준다).
+
+def _subtract(windows: list[tuple[int, int]], lo: int, hi: int) -> list[tuple[int, int]]:
+    """구간 목록에서 [lo, hi)를 N으로 뺀다."""
+    out = []
+    for s, e in windows:
+        out += [(a, b) for a, b in ((s, min(e, lo)), (max(s, hi), e)) if a < b]
+    return out
+
+
+def _clip(windows: list[tuple[int, int]], lo: int, hi: int) -> list[tuple[int, int]]:
+    """구간 목록을 [lo, hi) 안으로 자른다."""
+    return [(max(s, lo), min(e, hi)) for s, e in windows if max(s, lo) < min(e, hi)]
+
+
+def _set_windows(w: Worker, day: int, windows: list[tuple[int, int]]) -> None:
+    if windows == [w.available]:
+        w.capacity.pop(day, None)
+    else:
+        w.capacity[day] = windows
+
+
+def _make_capacity(rng: random.Random, cfg: dict, workers: list[Worker], days: int) -> None:
+    """#8 할당제한반복일정(며칠마다 같은 시간대 N), #9 근무시간 축소(변경일부터 줄어든 시간만 N)."""
+    ccfg = cfg["capacity"]
+    unit = ccfg["unit_min"]
+
+    block = ccfg["recurring_block"]
+    for w in rng.sample(workers, round(len(workers) * block["worker_share"])):
+        period = rng.randint(*block["period_days"])
+        length = rng.randrange(block["block_min"][0], block["block_min"][1] + 1, unit)
+        lo = rng.randrange(w.available[0], w.available[1] - length + 1, unit)
+        for day in range(rng.randint(1, period), days + 1, period):
+            _set_windows(w, day, _subtract(w.windows(day), lo, lo + length))
+
+    reduced = ccfg["hours_reduced"]
+    for w in rng.sample(workers, round(len(workers) * reduced["worker_share"])):
+        cut = rng.randrange(reduced["reduce_min"][0], reduced["reduce_min"][1] + 1, unit)
+        start, end = w.available
+        lo, hi = (start + cut, end) if rng.random() < 0.5 else (start, end - cut)
+        for day in range(rng.randint(2, days), days + 1):
+            _set_windows(w, day, _clip(w.windows(day), lo, hi))
+
+
 # --- 결함 주입 ---------------------------------------------------------------
 # 각 함수는 인스턴스를 제자리에서 바꾸고 (영향받은 항목 ID, 작업자 ID)를 돌려준다.
 
@@ -156,6 +201,8 @@ def _inject_p3(rng, inst: Instance, spec: dict, cfg: dict):
     chosen = rng.sample(inst.workers, round(len(inst.workers) * g["worker_share"]))
     for w in chosen:
         w.available = window
+        for day, windows in list(w.capacity.items()):
+            _set_windows(w, day, _clip(windows, *window))
     return [], sorted(w.id for w in chosen)
 
 
@@ -184,7 +231,23 @@ def _inject_p4(rng, inst: Instance, spec: dict, cfg: dict):
     return affected, []
 
 
-INJECTORS = {"P1": _inject_p1, "P2": _inject_p2, "P3": _inject_p3, "P4": _inject_p4}
+def _inject_p5(rng, inst: Instance, spec: dict, cfg: dict):
+    g = spec["generation"]
+    lo, hi = (hhmm_to_min(t) for t in g["hidden"])
+    members = [w for w in inst.workers if w.branch == g["branch"]]
+    chosen = rng.sample(members, round(len(members) * g["share_in_branch"]))
+    affected = []
+    for w in chosen:
+        # 근무시간(available)은 09시 출근으로 바뀌었지만 늘어난 시간은 연동되지 않아 시간역량은 매일 N
+        before = {day: w.windows(day) for day in range(1, inst.days + 1)}
+        for day, windows in before.items():
+            _set_windows(w, day, _subtract(windows, lo, hi))
+        if any(w.windows(day) != windows for day, windows in before.items()):
+            affected.append(w.id)                  # 원래 그 시간에 역량이 없던 작업자(예: P3)는 정답이 아니다
+    return [], sorted(affected)
+
+
+INJECTORS = {"P1": _inject_p1, "P2": _inject_p2, "P3": _inject_p3, "P4": _inject_p4, "P5": _inject_p5}
 
 
 def generate(seed: int, faults: list[str]) -> tuple[Instance, dict]:
@@ -198,6 +261,7 @@ def generate(seed: int, faults: list[str]) -> tuple[Instance, dict]:
     rng = random.Random(seed)
     workers = _make_workers(rng, cfg, branches)
     orders = _make_orders(rng, cfg, branches)
+    _make_capacity(random.Random(f"{seed}-capacity"), cfg, workers, cfg["days"])
     inst = Instance(branches=branches, boundary_zone_km=cfg["boundary_zone_km"],
                     workers=workers, orders=orders, days=cfg["days"], geo=geo)
 

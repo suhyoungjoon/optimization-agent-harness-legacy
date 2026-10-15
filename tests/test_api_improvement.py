@@ -305,7 +305,7 @@ def test_params_history_card_records_approver_and_values(client, files):
     cards = client.get("/params/history", params={"domain": "dispatch"}).json()
     assert len(cards) == 1
     card = cards[0]
-    assert (card["version_before"], card["version_after"]) == (1, 2) and card["approver"] == "김현장"
+    assert (card["version_before"], card["version_after"]) == (2, 3) and card["approver"] == "김현장"
     assert card["findings"][0]["id"] == "F1" and card["metrics_after"]["assignment_rate"] > card["metrics_before"]["assignment_rate"]
 
 

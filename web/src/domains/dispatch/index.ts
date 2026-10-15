@@ -15,11 +15,17 @@ export const dispatchAdapter: DomainAdapter = {
     fieldLabels: {
       id: "ID", name: "이름", day: "날짜", branch: "지점", work_type: "작업유형", media: "매체", difficulty: "난이도",
       building_type: "건물유형", desired: "희망시간", x: "x(km)", y: "y(km)", skills: "기술", certs: "자격", cei: "CEI",
-      available: "가능시간",
+      available: "근무시간", capacity: "시간역량(일자별)",
     },
     format: (_table, field, value) => {
       if (field === "desired" && typeof value === "number") return hhmm(value);
       if (field === "available" && Array.isArray(value)) return `${hhmm(value[0])}~${hhmm(value[1])}`;
+      if (field === "capacity" && value && typeof value === "object") {
+        const days = Object.entries(value as Record<string, [number, number][]>);
+        return days.length
+          ? days.map(([d, ws]) => `${d}일 ${ws.map(([s, e]) => `${hhmm(s)}~${hhmm(e)}`).join(", ") || "N"}`).join(" / ")
+          : "근무시간과 같음";
+      }
       if (field === "certs" && Array.isArray(value)) return value.map((v) => LABELS[v] ?? v).join(", ") || "없음";
       if (["work_type", "difficulty", "building_type"].includes(field) && typeof value === "string")
         return `${LABELS[value] ?? value} (${value})`;
@@ -32,9 +38,9 @@ export const dispatchAdapter: DomainAdapter = {
     { key: "assignment_rate", label: "배정 성공률", format: "pct", headline: true, primary: true, better: "up",
       tech: "할당성공률: 배정된 지시서 ÷ 전체 지시서" },
     { key: "desired_time_match_rate", label: "희망시간 준수율", format: "pct", headline: true, better: "up",
-      tech: "희망시간 일치율: 배정된 지시서 중 고객 희망시각에 정확히 시작한 비율" },
+      tech: "희망시간 일치율: 배정된 지시서 중 약속 시간대(실제 시작 시각이 속한 1시간)가 고객 희망 시간대와 같은 비율" },
     { key: "on_time_rate", label: "정시 배정 비율", format: "pct", better: "up",
-      tech: "희망시각에 정확히 시작하도록 배정된 지시서 ÷ 전체 지시서 (배정이 늘어도 착시가 없는 정시 서비스 기준)" },
+      tech: "희망 시간대에 약속된 지시서 ÷ 전체 지시서 (배정이 늘어도 착시가 없는 정시 서비스 기준)" },
     { key: "avg_travel_min", label: "평균 이동시간", format: "min", headline: true, better: "down",
       tech: "직전 위치에서 지시서까지 이동시간 평균 (직선거리 × 우회계수 ÷ 평균 속도)" },
     { key: "worker_utilization", label: "작업자 가동률", format: "pct", better: "up",

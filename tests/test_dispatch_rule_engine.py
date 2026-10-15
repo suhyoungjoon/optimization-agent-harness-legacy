@@ -13,6 +13,8 @@ from domains.dispatch.models import Branch, Instance, Order, Worker, hhmm_to_min
 PARAMS = yaml.safe_load(
     (Path(__file__).resolve().parent.parent / "domains" / "dispatch" / "params.yaml").read_text(encoding="utf-8"))
 DAY = (hhmm_to_min("09:00"), hhmm_to_min("18:00"))
+# W2의 1일차 시간역량: 12~13시 N (할당제한반복일정)
+W2_DAY1 = [(hhmm_to_min("09:00"), hhmm_to_min("12:00")), (hhmm_to_min("13:00"), hhmm_to_min("18:00"))]
 
 
 def order(oid, desired, x, y, media="FTTx", difficulty="none", work_type="install", building="house"):
@@ -24,7 +26,7 @@ def order(oid, desired, x, y, media="FTTx", difficulty="none", work_type="instal
 def small():
     workers = [
         Worker("W1", "A", ["FTTx"], [], 90, 2, 2, DAY),              # 명장
-        Worker("W2", "A", ["FTTx", "HFC"], ["pole"], 60, 8, 8, DAY),
+        Worker("W2", "A", ["FTTx", "HFC"], ["pole"], 60, 8, 8, DAY, capacity={1: W2_DAY1}),
     ]
     orders = [
         order("O1", "09:00", 2, 3),                                  # W1, 1단계
@@ -33,8 +35,8 @@ def small():
         order("O4", "09:00", 4, 4, media="CATV"),                    # 기술 보유자 없음
         order("O5", "09:00", 4, 4, difficulty="high_risk"),          # 자격 보유자 없음
         order("O6", "09:00", 14, 4),                                 # 관할 밖 4km
-        order("O7", "07:00", 4, 4),                                  # 가능시간 전
-        order("O8", "09:00", 6, 6, media="HFC", work_type="repair"),  # W2 일정이 참
+        order("O7", "06:00", 4, 4),                                  # 3단계(±2시간대)로도 시간역량 전
+        order("O8", "09:00", 6, 6, media="HFC", work_type="repair"),  # W2 일정이 12시 N 전까지 참
         order("O9", "15:00", 8, 8),                                  # W2가 가깝지만 명장 W1 우선
     ]
     square = lambda x0: [(x0, 0), (x0 + 10, 0), (x0 + 10, 10), (x0, 10)]  # noqa: E731
@@ -50,8 +52,8 @@ def test_solve_small_case(small):
     got = by_id(rule_engine.solve(small, PARAMS))
     assert got["O1"].decision == {"worker_id": "W1", "start_time": "09:00", "matching_stage": 1}
     assert got["O2"].decision == {"worker_id": "W2", "start_time": "09:00", "matching_stage": 1}
-    # O2(09:00~09:45) 종료 후 4km 이동 8분 → 09:53, ±60분 3단계에서만 가능
-    assert got["O3"].decision == {"worker_id": "W2", "start_time": "09:53", "matching_stage": 3}
+    # O2(09:00~09:45) 종료 후 4km 이동 8분 → 09:53. 약속 시간대는 09~10시라 희망과 같아 1단계
+    assert got["O3"].decision == {"worker_id": "W2", "start_time": "09:53", "matching_stage": 1}
     assert got["O9"].decision == {"worker_id": "W1", "start_time": "15:00", "matching_stage": 1}
     expected_fail = {"O4": "NO_SKILL", "O5": "NO_CERT", "O6": "OUT_OF_AREA",
                      "O7": "NO_TIME_MATCH", "O8": "CAPACITY"}
@@ -63,7 +65,7 @@ def test_solve_small_case(small):
 
 def test_solve_records_evidence_and_dims(small):
     got = by_id(rule_engine.solve(small, PARAMS))
-    assert "3단계" in got["O3"].evidence and "W2" in got["O3"].evidence
+    assert "1단계" in got["O3"].evidence and "W2" in got["O3"].evidence
     assert got["O6"].dims["area_zone"] == "boundary"
     assert got["O1"].dims == {"branch": "A", "hour": "09", "work_type": "install", "media": "FTTx",
                               "building_type": "house", "difficulty": "none", "area_zone": "core"}
@@ -84,9 +86,11 @@ def decide(item_id, worker_id, start, status="success"):
     ([decide("O5", "W1", "10:00")], "cert_required", "O5"),
     ([decide("O1", "W1", "08:30")], "outside_availability", "O1"),
     ([decide("O1", "W1", "17:30")], "outside_availability", "O1"),
+    ([decide("O1", "W2", "11:30")], "outside_availability", "O1"),      # 12~13시 N에 걸침
+    ([decide("O1", "W2", "12:30")], "outside_availability", "O1"),
     ([decide("O1", "W1", "09:00"), decide("O9", "W1", "09:30")], "schedule_overlap", "O9"),
-    # O3(승주 90분) 10:00~11:30 직후 O2 시작: 작업은 안 겹치지만 이동 8분을 넣으면 겹침
-    ([decide("O3", "W2", "10:00"), decide("O2", "W2", "11:30")], "schedule_overlap", "O2"),
+    # O3(승주 90분) 13:00~14:30 직후 O2 시작: 작업은 안 겹치지만 이동 8분을 넣으면 겹침
+    ([decide("O3", "W2", "13:00"), decide("O2", "W2", "14:30")], "schedule_overlap", "O2"),
     ([decide("O1", "WX", "09:00")], "invalid_decision", "O1"),
     ([decide("O1", "W1", "9시")], "invalid_decision", "O1"),
     ([decide("O1", "W1", "09:00"), decide("O1", "W1", "13:00")], "invalid_decision", "O1"),
@@ -112,6 +116,42 @@ def test_solve_full_dataset_has_no_violations(faults):
     records = rule_engine.solve(inst, PARAMS)
     assert len(records) == len(inst.orders)
     assert rule_engine.validate(inst, records, PARAMS) == []
+
+
+def test_validate_accepts_each_capacity_window(small):
+    assert rule_engine.validate(small, [decide("O1", "W2", "10:30")], PARAMS) == []
+    assert rule_engine.validate(small, [decide("O1", "W2", "13:00")], PARAMS) == []
+
+
+def test_solve_skips_capacity_gap(small):
+    """12시 희망 지시서는 12~13시 N이라 1단계에 못 들고, 2단계(±1시간대)에서 N 앞 구간 11시에 잡힌다."""
+    small.workers[0].skills = ["CATV"]                  # W1은 후보에서 뺀다
+    small.orders = [order("P1", "12:00", 8, 8)]
+    got = rule_engine.solve(small, PARAMS)[0]
+    assert got.decision == {"worker_id": "W2", "start_time": "11:00", "matching_stage": 2}
+    small.orders = [order("P2", "12:00", 8, 8, work_type="install", difficulty="pole")]   # 90분: 11시엔 N에 걸림
+    got = rule_engine.solve(small, PARAMS)[0]
+    assert got.decision == {"worker_id": "W2", "start_time": "13:00", "matching_stage": 2}
+
+
+def test_actual_stage_uses_appointment_slots(small):
+    o, w = small.order_index["O1"], small.worker_index["W1"]      # 희망 09:00
+    stage = lambda t: rule_engine.actual_stage(small, o, w, hhmm_to_min(t), PARAMS)  # noqa: E731
+    assert [stage(t) for t in ("09:00", "09:59", "10:00", "08:30", "11:59", "12:00")] == [1, 1, 2, 2, 3, None]
+
+
+def test_whole_day_off_is_no_time_match(small):
+    small.workers[0].capacity = {1: []}
+    small.workers[1].capacity = {1: []}
+    small.orders = [order("P1", "10:00", 2, 3)]
+    got = rule_engine.solve(small, PARAMS)[0]
+    assert got.status == "failed" and got.reason_code == "NO_TIME_MATCH"
+
+
+@pytest.mark.parametrize("faults", [["P5"]])
+def test_solve_with_p5_has_no_violations(faults):
+    inst, _ = generate(42, faults)
+    assert rule_engine.validate(inst, rule_engine.solve(inst, PARAMS), PARAMS) == []
 
 
 def test_solve_is_deterministic():

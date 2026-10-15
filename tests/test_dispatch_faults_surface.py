@@ -8,6 +8,7 @@ import copy
 import pytest
 
 from domains.dispatch.generator import generate
+from domains.dispatch.models import hhmm_to_min
 from domains.dispatch.pack import get_pack
 
 SEED = 42
@@ -84,3 +85,39 @@ def test_p3_visible_through_analysis_tools(pack):
     assert stats["rows"][0]["available"] == "13:00-18:00"
     hours = next(t for t in pack.analysis_tools(inst, records) if t["name"] == "demand_by_hour")["handler"]({})
     assert hours["rows"][0]["hour"] == "09" and hours["rows"][0]["workers_available"] < 30
+
+
+def test_p5_pushes_branch_a_nine_oclock_to_later_slots(pack, base):
+    _, _, records = run(pack, ["P5"])
+    a_nine = lambda r: r.dims["branch"] == "A" and r.dims["hour"] == "09"  # noqa: E731
+
+    def on_time(recs):
+        selected = [r for r in recs if a_nine(r)]
+        return sum(r.status == "success" and r.decision["matching_stage"] == 1 for r in selected) / len(selected)
+
+    # 미할당보다는 희망 시간대(09시) 약속이 크게 줄고 10시 이후로 밀린다
+    assert on_time(records) <= on_time(base) - 0.3
+
+
+def test_p5_visible_through_analysis_tools(pack):
+    inst, truth, records = run(pack, ["P5"])
+    hidden = set(truth["faults"]["P5"]["affected_workers"])
+    stats = next(t for t in pack.analysis_tools(inst, records) if t["name"] == "worker_stats")["handler"]({})
+    rows = {r["worker_id"]: r for r in stats["rows"]}
+    # 근무시간은 09시 출근인데 시간역량은 매일 10시부터: 둘을 나란히 보면 드러난다
+    for wid in hidden:
+        assert rows[wid]["available"] == "09:00-18:00"
+        assert "09:00-" not in rows[wid]["capacity"]
+
+
+def test_demand_by_hour_counts_capacity_starting_inside_the_hour(pack):
+    inst, _ = generate(SEED, [])
+    w = inst.workers[0]
+    w.capacity = {d: [(hhmm_to_min("10:30"), hhmm_to_min("18:00"))] for d in range(1, inst.days + 1)}
+    others = [x for x in inst.workers if x.branch == w.branch and x is not w]
+    for x in others:
+        x.capacity = {d: [] for d in range(1, inst.days + 1)}
+    hours = next(t for t in pack.analysis_tools(inst, []) if t["name"] == "demand_by_hour")["handler"](
+        {"branch": w.branch})
+    rows = {r["hour"]: r["workers_available"] for r in hours["rows"]}
+    assert rows["09"] == 0 and rows["10"] == 1      # 10:30 시작이어도 10~11시 약속은 받을 수 있다

@@ -30,11 +30,14 @@ def test_get_order(pack, small):  # noqa: F811
 
 def test_find_candidates_follows_schedule(pack, small):  # noqa: F811
     before = [placed("O2", "W2", "09:00")]       # W2 09:00~09:45
-    assert call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", before)["candidates"] == []
-    stage3 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 3}, "O3", before)
-    assert stage3["candidates"] == [
+    # 09:53 시작이어도 약속 시간대(09~10시)가 희망과 같아 1단계 후보
+    stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", before)
+    assert stage1["candidates"] == [
         {"worker_id": "W2", "cei": 60, "master": False, "start_time": "09:53", "travel_min": 8}]
-    assert stage3["funnel"] == {"branch": 2, "skilled": 2, "certified": 1}
+    assert stage1["funnel"] == {"branch": 2, "skilled": 2, "certified": 1}
+    busy = before + [placed("O8", "W2", "09:53")]   # W2 09:53~10:38 → O3 90분은 12시 N 전에 못 끝남, 13시 시간대
+    stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", busy)
+    assert stage1["candidates"] == []
 
 
 def test_travel_and_schedule(pack, small):  # noqa: F811
@@ -44,6 +47,8 @@ def test_travel_and_schedule(pack, small):  # noqa: F811
     sched = call(pack, small, "get_worker_schedule", {"worker_id": "W2"}, "O3", before)
     assert sched["jobs"] == [{"order_id": "O2", "start": "09:00", "end": "09:45", "x": 5, "y": 5}]
     assert sched["certs"] == ["pole"] and sched["master"] is False
+    assert sched["available"] == ["09:00", "18:00"]
+    assert sched["capacity"] == [["09:00", "12:00"], ["13:00", "18:00"]]   # 그날 일할 수 있는 구간
 
 
 def test_check_assignment(pack, small):  # noqa: F811
@@ -60,8 +65,8 @@ def test_unknown_ids_return_error(pack, small):  # noqa: F811
 
 
 def test_approval_reasons(pack, small):  # noqa: F811
-    stage3 = placed("O3", "W2", "09:53", stage=3)
-    assert pack.approval_reasons(small, stage3, [placed("O2", "W2", "09:00")]) == ["3단계 매칭 배정"]
+    stage3 = placed("O1", "W1", "11:00", stage=3)           # 희망 09시, 약속 11시 시간대 → ±2시간대
+    assert pack.approval_reasons(small, stage3, []) == ["3단계 매칭 배정"]
     # 명장 W1이 비어 있는데 일반 작업자 W2에게 배정
     non_master = placed("O9", "W2", "15:00")
     reasons = pack.approval_reasons(small, non_master, [])
@@ -73,9 +78,9 @@ def test_subset_one_day(pack):
     inst, _ = generate(42, [])
     day1 = [i for i in pack.items(inst) if i.startswith("D01-")]
     sub = pack.subset(inst, day1)
-    assert len(sub.orders) == 150 and sub.days == 1
+    assert len(sub.orders) == 185 and sub.days == 1
     records = pack.solve(sub, pack.params)
-    assert len(records) == 150 and pack.validate(sub, records) == []
+    assert len(records) == 185 and pack.validate(sub, records) == []
     assert 0 < pack.metrics(sub, records)["worker_utilization"] < 1
 
 

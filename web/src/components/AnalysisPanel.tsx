@@ -223,7 +223,7 @@ export default function AnalysisPanel({
       )}
       {!current && (
         <p className="muted empty">
-          분석할 결과를 고르고 {TERMS.aiAnalysis.label}을 실행하세요. {TERMS.faults.label}(P1~P4)를 켠 데이터로 {TERMS.rule.label}을 전체 실행한 결과를
+          분석할 결과를 고르고 {TERMS.aiAnalysis.label}을 실행하세요. {TERMS.faults.label}(P1~P5)를 켠 데이터로 {TERMS.rule.label}을 전체 실행한 결과를
           분석하면 {TERMS.detection.label}을 정답과 대조해 볼 수 있습니다.
         </p>
       )}

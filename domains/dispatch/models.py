@@ -1,7 +1,7 @@
 """dispatch 도메인 데이터 모델. 시각은 자정 기준 분(int), 좌표는 km 평면 (geo로 위경도 변환)."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 
 
@@ -14,6 +14,11 @@ def min_to_hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+def slot_of(minutes: int, slot_min: int) -> int:
+    """시각이 속한 약속 시간대의 시작 (예: 1시간 단위면 09:53 → 09:00)."""
+    return minutes - minutes % slot_min
+
+
 @dataclass
 class Worker:
     id: str
@@ -23,7 +28,13 @@ class Worker:
     cei: int
     x: float
     y: float
-    available: tuple[int, int]     # 가능시간 [시작, 종료) 분
+    available: tuple[int, int]     # 기본 근무시간 [시작, 종료) 분
+    # 일자별 시간역량: 날짜 → 일할 수 있는(Y) 구간 목록. 기본 근무시간과 다른 날만 적는다 (빈 목록 = 하루 전체 N)
+    capacity: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
+
+    def windows(self, day: int) -> list[tuple[int, int]]:
+        """그날 일할 수 있는 구간 [시작, 종료) 목록 (시간순)."""
+        return self.capacity.get(day, [self.available])
 
 
 @dataclass
@@ -54,6 +65,10 @@ class Instance:
     orders: list[Order]
     days: int
     geo: dict                              # km 평면 ↔ 위경도: {"origin": [경도, 위도], "km_per_deg": [x, y]}
+
+    def active_days(self) -> list[int]:
+        """지시서가 있는 날짜 (subset이면 원래 날짜 번호 그대로)."""
+        return sorted({o.day for o in self.orders})
 
     @cached_property
     def worker_index(self) -> dict[str, Worker]:

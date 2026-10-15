@@ -8,9 +8,9 @@ RULE = {"when": {"area_zone": ["boundary"]}, "set": {"matching.area_extension_km
 
 
 def test_change_record_keeps_values_before_and_after():
-    proposal = {"params_changes": [{"path": "matching.time_window_min[2]", "value": 90}], "override_rules": [RULE]}
+    proposal = {"params_changes": [{"path": "matching.time_window_min[2]", "value": 180}], "override_rules": [RULE]}
     rec = change_record(PARAMS, proposal)
-    assert rec["changes"] == [{"path": "matching.time_window_min[2]", "before": 60, "after": 90}]
+    assert rec["changes"] == [{"path": "matching.time_window_min[2]", "before": 120, "after": 180}]
     assert rec["override_rules"] == [{**RULE, "before": {"matching.area_extension_km[2]": 3}}]
 
 
@@ -49,9 +49,9 @@ def test_spec_or_unapproved_proposals_make_no_card():
 
 
 def test_change_record_follows_sequential_changes_to_the_same_path():
-    proposal = {"params_changes": [{"path": "matching.time_window_min[2]", "value": 90},
-                                   {"path": "matching.time_window_min[2]", "value": 120}],
+    proposal = {"params_changes": [{"path": "matching.time_window_min[2]", "value": 180},
+                                   {"path": "matching.time_window_min[2]", "value": 60}],
                 "override_rules": [{"when": {"hour": ["10"]}, "set": {"matching.time_window_min[2]": 30}}]}
     rec = change_record(PARAMS, proposal)
-    assert [(c["before"], c["after"]) for c in rec["changes"]] == [(60, 90), (90, 120)]
-    assert rec["override_rules"][0]["before"] == {"matching.time_window_min[2]": 120}   # 전역 값 바뀐 뒤 기준
+    assert [(c["before"], c["after"]) for c in rec["changes"]] == [(120, 180), (180, 60)]
+    assert rec["override_rules"][0]["before"] == {"matching.time_window_min[2]": 60}   # 전역 값 바뀐 뒤 기준
