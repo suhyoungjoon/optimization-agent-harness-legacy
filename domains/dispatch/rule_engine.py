@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from core.interfaces import DecisionRecord, Violation
 from core.params import apply_overrides
 
-from .models import Instance, Order, Worker, hhmm_to_min, min_to_hhmm, road_distance
+from .models import Instance, Order, Worker, hhmm_to_min, min_to_hhmm, road_distance, slot_of
 
 # 난이도 → 필요한 자격. 난이도 값과 자격 이름이 같다 (outdoor, none은 자격 불필요).
 REQUIRED_CERT = {"pole": "pole", "high_risk": "high_risk"}
@@ -29,6 +29,26 @@ def duration_min(order: Order, params: dict) -> int:
 def travel_min(x1: float, y1: float, x2: float, y2: float, params: dict) -> int:
     t = params["travel"]
     return math.ceil(road_distance(x1, y1, x2, y2, t["detour_factor"]) / t["avg_speed_kmh"] * 60)
+
+
+def start_range(order: Order, window: int, params: dict) -> tuple[int, int]:
+    """허용 오차 window(분) 안의 약속 시간대에 들어가는 시작 시각 범위 [lo, hi] (양끝 포함).
+
+    약속은 slot_min 단위 방문창이고, 실제 시작 시각이 속한 시간대가 약속 시간대다.
+    """
+    slot = params["appointment"]["slot_min"]
+    base, k = slot_of(order.desired, slot), window // slot
+    return base - k * slot, base + (k + 1) * slot - 1
+
+
+def slot_gap(order: Order, start: int, params: dict) -> int:
+    """약속 시간대와 희망 시간대의 차이(분)."""
+    slot = params["appointment"]["slot_min"]
+    return abs(slot_of(start, slot) - slot_of(order.desired, slot))
+
+
+def fmt_windows(windows: list[tuple[int, int]]) -> str:
+    return ", ".join(f"{min_to_hhmm(s)}~{min_to_hhmm(e)}" for s, e in windows) or "없음(하루 전체 N)"
 
 
 def dims_of(inst: Instance, order: Order) -> dict[str, str]:
@@ -85,12 +105,12 @@ def validate(inst: Instance, decisions: list[DecisionRecord], params: dict) -> l
             violations.append(Violation(d.item_id, "cert_required",
                                         f"{worker.id}는 {cert} 자격이 없음"))
         end = start + duration_min(order, params)
-        a0, a1 = worker.available
-        if start < a0 or end > a1:
+        windows = worker.windows(order.day)
+        if not any(a0 <= start and end <= a1 for a0, a1 in windows):
             violations.append(Violation(
                 d.item_id, "outside_availability",
-                f"{min_to_hhmm(start)}~{min_to_hhmm(end)}가 {worker.id} 가능시간 "
-                f"{min_to_hhmm(a0)}~{min_to_hhmm(a1)} 밖"))
+                f"{min_to_hhmm(start)}~{min_to_hhmm(end)}가 {worker.id}의 {order.day}일 시간역량 "
+                f"{fmt_windows(windows)} 중 한 구간 안에 들지 않음"))
         placed[(worker.id, order.day)].append((start, end, order))
 
     for (worker_id, _day), jobs in placed.items():
@@ -123,24 +143,27 @@ class Slot:
 
 def _best_slot(worker: Worker, order: Order, dur: int, lo: int, hi: int,
                jobs: list[Job], params: dict) -> Slot | None:
-    """[lo, hi] 안에서 기존 일정 사이에 들어가는 시작 시각 중 희망시간에 가장 가까운 것."""
-    a0, a1 = worker.available
+    """[lo, hi] 안에서 그날 시간역량 구간과 기존 일정 사이에 들어가는 시작 시각 중
+    약속 시간대가 희망 시간대에 가장 가깝고, 그다음 희망시각에 가장 가까운 것."""
     best: Slot | None = None
-    for k in range(len(jobs) + 1):
-        prev = jobs[k - 1] if k > 0 else None
-        nxt = jobs[k] if k < len(jobs) else None
-        px, py = (prev.order.x, prev.order.y) if prev else (worker.x, worker.y)
-        earliest = prev.end + travel_min(px, py, order.x, order.y, params) if prev else a0
-        latest_end = (nxt.start - travel_min(order.x, order.y, nxt.order.x, nxt.order.y, params)
-                      if nxt else a1)
-        s_lo = max(earliest, lo, a0)
-        s_hi = min(latest_end - dur, hi, a1 - dur)
-        if s_lo > s_hi:
-            continue
-        start = min(max(order.desired, s_lo), s_hi)
-        slot = Slot(worker, start, travel_min(px, py, order.x, order.y, params))
-        if best is None or (abs(start - order.desired), slot.travel) < (abs(best.start - order.desired), best.travel):
-            best = slot
+    best_key = None
+    for a0, a1 in worker.windows(order.day):
+        for k in range(len(jobs) + 1):
+            prev = jobs[k - 1] if k > 0 else None
+            nxt = jobs[k] if k < len(jobs) else None
+            px, py = (prev.order.x, prev.order.y) if prev else (worker.x, worker.y)
+            earliest = prev.end + travel_min(px, py, order.x, order.y, params) if prev else a0
+            latest_end = (nxt.start - travel_min(order.x, order.y, nxt.order.x, nxt.order.y, params)
+                          if nxt else a1)
+            s_lo = max(earliest, lo, a0)
+            s_hi = min(latest_end - dur, hi, a1 - dur)
+            if s_lo > s_hi:
+                continue
+            start = min(max(order.desired, s_lo), s_hi)
+            slot = Slot(worker, start, travel_min(px, py, order.x, order.y, params))
+            key = (slot_gap(order, start, params), abs(start - order.desired), slot.travel)
+            if best is None or key < best_key:
+                best, best_key = slot, key
     return best
 
 
@@ -166,7 +189,7 @@ def stage_slots(inst: Instance, order: Order, stage: int, certified: list[Worker
     ext = params["matching"]["area_extension_km"][stage - 1]
     dur = duration_min(order, params)
     in_area = [w for w in certified if inst.distance_outside(w.branch, order.x, order.y) <= ext]
-    lo, hi = order.desired - window, order.desired + window
+    lo, hi = start_range(order, window, params)
     return [s for w in in_area if (s := _best_slot(w, order, dur, lo, hi, jobs_of(w), params))]
 
 
@@ -178,10 +201,12 @@ def pick(slots: list[Slot], params: dict) -> Slot:
 
 def actual_stage(inst: Instance, order: Order, worker: Worker, start: int, params: dict) -> int | None:
     """배정이 실제로 해당하는 가장 엄격한 매칭 단계. 3단계 범위도 벗어나면 None."""
-    m = effective_params(inst, order, params)["matching"]
+    effective = effective_params(inst, order, params)
+    m = effective["matching"]
     outside = inst.distance_outside(worker.branch, order.x, order.y)
+    gap = slot_gap(order, start, effective)
     for stage, (window, ext) in enumerate(zip(m["time_window_min"], m["area_extension_km"]), start=1):
-        if abs(start - order.desired) <= window and outside <= ext:
+        if gap <= window and outside <= ext:
             return stage
     return None
 
@@ -231,15 +256,17 @@ def _assign_one(inst: Instance, order: Order, params: dict,
         schedules[w.id].sort(key=lambda j: j.start)
         grade = "명장" if w.cei >= threshold else "일반"
         diff = chosen.start - order.desired
+        slot = params["appointment"]["slot_min"]
+        appt = slot_of(chosen.start, slot)
         return DecisionRecord(
             item_id=order.id,
             decision={"worker_id": w.id, "start_time": min_to_hhmm(chosen.start), "matching_stage": stage},
             status="success",
             reason_code=None,
-            evidence=(f"{funnel}. {stage}단계 매칭(±{window}분, +{ext}km)에서 가능 후보 {len(slots)}명 중 "
+            evidence=(f"{funnel}. {stage}단계 매칭(희망 시간대 ±{window}분, +{ext}km)에서 가능 후보 {len(slots)}명 중 "
                       f"{w.id} 선택({grade}, CEI {w.cei}, 이동 {chosen.travel}분). "
-                      f"시작 {min_to_hhmm(chosen.start)}, 희망 {min_to_hhmm(order.desired)}, "
-                      f"작업소요 {dur}분"),
+                      f"약속 {min_to_hhmm(appt)}~{min_to_hhmm(appt + slot)}, 시작 {min_to_hhmm(chosen.start)}, "
+                      f"희망 {min_to_hhmm(order.desired)}, 작업소요 {dur}분"),
             dims=dims_of(inst, order),
             metrics={"matching_stage": float(stage), "travel_min": float(chosen.travel),
                      "time_diff_min": float(abs(diff)), "duration_min": float(dur)},
@@ -252,14 +279,14 @@ def _assign_one(inst: Instance, order: Order, params: dict,
         outside = inst.distance_outside(order.branch, order.x, order.y)
         return _fail(inst, order, "OUT_OF_AREA",
                      f"{funnel}. 관할 밖 {outside:.1f}km로 최대 완화(+{ext}km) 범위를 벗어남")
-    lo, hi = order.desired - window, order.desired + window
+    lo, hi = start_range(order, window, params)
     fits_availability = [w for w in in_area
-                         if max(lo, w.available[0]) <= min(hi, w.available[1] - dur)]
+                         if any(max(lo, a0) <= min(hi, a1 - dur) for a0, a1 in w.windows(order.day))]
     if fits_availability:
         return _fail(inst, order, "CAPACITY",
-                     f"{funnel}. 희망시간 ±{window}분에 가능한 {len(fits_availability)}명의 일정이 모두 참")
+                     f"{funnel}. 희망 시간대 ±{window}분에 시간역량이 있는 {len(fits_availability)}명의 일정이 모두 참")
     return _fail(inst, order, "NO_TIME_MATCH",
-                 f"{funnel}. 희망시간 ±{window}분이 후보 가능시간과 맞지 않음")
+                 f"{funnel}. 희망 시간대 ±{window}분이 후보 {len(in_area)}명의 {order.day}일 시간역량과 맞지 않음")
 
 
 def solve(inst: Instance, params: dict) -> list[DecisionRecord]:
