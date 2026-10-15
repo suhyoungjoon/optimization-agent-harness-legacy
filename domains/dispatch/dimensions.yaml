@@ -16,7 +16,8 @@ resources:                      # 자원 단위 발견 (M12-d): 분석 발견의
     label: 작업자
     id_field: worker_id         # DecisionRecord.decision에서 이 자원을 가리키는 키 (화면 강조용)
     traits:                     # 발견에 함께 적을 수 있는 자원 속성 (값은 인용한 도구 결과에 있어야 한다)
-      available: {label: 가능시간}
+      available: {label: 근무시간}
+      capacity: {label: 시간역량}
       skills: {label: 기술}
       certs: {label: 자격}
       branch: {label: 지점}
@@ -34,5 +35,5 @@ violation_rules:                # Violation.rule (validate()가 반환, 필수�
   skill_required: 작업자가 지시서 매체 기술을 보유하지 않음
   cert_required: 승주·고위험 작업에 필요한 자격이 없음
   schedule_overlap: 같은 작업자의 작업 시간이 겹침 (이동시간 포함)
-  outside_availability: 작업자 가능시간 밖에 배정
+  outside_availability: 작업자 그날 시간역량(일할 수 있는 구간) 밖에 배정
   invalid_decision: 존재하지 않는 지시서·작업자, 시각 형식 오류, 같은 지시서 중복 결정

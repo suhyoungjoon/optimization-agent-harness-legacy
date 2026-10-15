@@ -9,7 +9,7 @@ from tests.fake_llm import FakeLLM, submit, tool_use
 from tests.test_dispatch_rule_engine import small  # noqa: F401 (fixture)
 
 # small 인스턴스의 규칙 agent 정답 (test_dispatch_rule_engine 참고)
-RULE = {"O1": ("W1", "09:00", 1), "O2": ("W2", "09:00", 1), "O3": ("W2", "09:53", 3), "O9": ("W1", "15:00", 1)}
+RULE = {"O1": ("W1", "09:00", 1), "O2": ("W2", "09:00", 1), "O3": ("W2", "09:53", 1), "O9": ("W1", "15:00", 1)}
 RULE_FAIL = {"O4": "NO_SKILL", "O5": "NO_CERT", "O6": "OUT_OF_AREA", "O7": "NO_TIME_MATCH", "O8": "CAPACITY"}
 
 
@@ -34,7 +34,7 @@ def run(pack, inst, level, policy, **kw):
 def test_items_processed_in_order_and_rule_policy_matches(pack, small):  # noqa: F811
     out, llm, got = run(pack, small, "L0", rule_policy)
     assert [d.item_id for d in out.decisions] == pack.items(small)
-    assert got["O3"].decision == {"worker_id": "W2", "start_time": "09:53", "matching_stage": 3}
+    assert got["O3"].decision == {"worker_id": "W2", "start_time": "09:53", "matching_stage": 1}
     assert got["O4"].status == "failed" and got["O4"].reason_code == "NO_SKILL"
     assert pack.validate(small, out.decisions) == []
     assert got["O1"].dims["branch"] == "A"
@@ -108,10 +108,15 @@ def test_l3_gives_up_after_max_retries(pack, small):  # noqa: F811
 
 
 def test_l4_blocks_and_holds_for_approval(pack, small):  # noqa: F811
-    out, _, got = run(pack, small, "L4", bad_then(fix=99))
+    def policy(item, n, messages, tools):
+        if item == "O1":                              # 희망 09시, 약속 11시 시간대: 3단계 매칭
+            return submit("O1", "W1", "11:00", 3)
+        return bad_then(fix=99)(item, n, messages, tools)
+
+    out, _, got = run(pack, small, "L4", policy)
     assert got["O4"].status == "blocked" and got["O4"].reason_code == "BLOCKED_BY_GUARDRAIL"
-    assert got["O3"].status == "pending_approval" and "3단계" in got["O3"].evidence
-    assert got["O1"].status == "success"
+    assert got["O1"].status == "pending_approval" and "3단계" in got["O1"].evidence
+    assert got["O3"].status == "success"
     assert pack.validate(small, out.decisions) == []
 
 

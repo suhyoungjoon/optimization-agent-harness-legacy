@@ -5,7 +5,7 @@ from collections import defaultdict
 from core.interfaces import DecisionRecord
 
 from .models import Instance
-from .rule_engine import PLACED_STATUSES, duration_min, parse_start, travel_min
+from .rule_engine import PLACED_STATUSES, duration_min, parse_start, slot_gap, travel_min
 
 
 def compute(inst: Instance, decisions: list[DecisionRecord], params: dict) -> dict[str, float]:
@@ -39,14 +39,16 @@ def compute(inst: Instance, decisions: list[DecisionRecord], params: dict) -> di
             travels.append(travel_min(px, py, order.x, order.y, params))
             busy += duration_min(order, params)
             px, py = order.x, order.y
-    available = sum(w.available[1] - w.available[0] for w in inst.workers) * inst.days
+    # 가용시간: 작업자별 그날 시간역량(Y 구간) 합
+    available = sum(e - s for w in inst.workers for day in inst.active_days() for s, e in w.windows(day))
+    on_time = sum(slot_gap(o, start, params) == 0 for _, o, start in placed)   # 약속 시간대 == 희망 시간대
 
     metrics = {
         "assignment_rate": n / total if total else 0.0,
         "avg_travel_min": sum(travels) / n if n else 0.0,
-        "desired_time_match_rate": sum(start == o.desired for _, o, start in placed) / n if n else 0.0,
-        # 희망시각에 맞춰 배정된 건 / 전체 건. 위 비율은 배정된 건 중이라 배정이 늘면 저절로 떨어진다
-        "on_time_rate": sum(start == o.desired for _, o, start in placed) / total if total else 0.0,
+        "desired_time_match_rate": on_time / n if n else 0.0,
+        # 희망 시간대에 약속한 건 / 전체 건. 위 비율은 배정된 건 중이라 배정이 늘면 저절로 떨어진다
+        "on_time_rate": on_time / total if total else 0.0,
         "worker_utilization": busy / available if available else 0.0,
     }
     for stage in range(1, len(params["matching"]["time_window_min"]) + 1):
