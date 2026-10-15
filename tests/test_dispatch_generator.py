@@ -149,3 +149,12 @@ def test_p3_clips_daily_capacity_to_new_hours():
     for wid in truth["faults"]["P3"]["affected_workers"]:
         w = inst.worker_index[wid]
         assert all(_inside(w.windows(d), w.available) for d in range(1, inst.days + 1))
+
+
+def test_p5_truth_skips_workers_p3_already_moved_to_afternoon():
+    inst, truth = generate(SEED, ["P3", "P5"])
+    p3 = set(truth["faults"]["P3"]["affected_workers"])
+    p5 = set(truth["faults"]["P5"]["affected_workers"])
+    alone = set(generate(SEED, ["P5"])[1]["faults"]["P5"]["affected_workers"])
+    assert p5 == alone - p3                            # 09시 시간역량이 원래 없던 작업자는 정답이 아니다
+    assert alone & p3                                  # seed 42에서는 실제로 겹친다

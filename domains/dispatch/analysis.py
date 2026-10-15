@@ -48,6 +48,8 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
                 "mean_utilization": round(sum(r["utilization"] for r in rows) / n, 3) if n else 0.0,
                 "rows": rows[:limit]}
 
+    slot = params["appointment"]["slot_min"]
+
     def demand_by_hour(args: dict):
         branch = args.get("branch")
         orders = [o for o in inst.orders if not branch or o.branch == branch]
@@ -62,8 +64,8 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
                 "orders": len(in_hour),
                 "assigned": sum(status.get(o.id) == "success" for o in in_hour),
                 "unassigned": sum(status.get(o.id) not in (None, "success") for o in in_hour),
-                # 그 시각에 시간역량이 있는 작업자 수 (날짜 평균)
-                "workers_available": round(sum(any(s <= start < e for s, e in w.windows(d))
+                # 그 약속 시간대에 시간역량이 조금이라도 있는 작업자 수 (날짜 평균)
+                "workers_available": round(sum(any(s < start + slot and start < e for s, e in w.windows(d))
                                                for w in workers for d in day_list) / max(days, 1), 1),
             })
         return {"branch": branch or "전체", "days": days, "rows": rows}
@@ -81,7 +83,7 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
         },
         {
             "name": "demand_by_hour",
-            "description": "희망시간(시)별 지시서 수, 배정·미배정 수, 그 시각에 시간역량이 있는 작업자 수(날짜 평균).",
+            "description": "희망시간(시)별 지시서 수, 배정·미배정 수, 그 약속 시간대에 시간역량이 있는 작업자 수(날짜 평균).",
             "input_schema": {"type": "object", "properties": {"branch": _BRANCH}},
             "handler": demand_by_hour,
         },

@@ -417,7 +417,7 @@ overrides:                        # 구간 조건
 |---|---|
 | `assignment_rate` | success 건수 ÷ 인스턴스 전체 지시서 수 |
 | `avg_travel_min` | 작업자·날짜별 시간순 동선(첫 작업은 작업자 좌표 출발)의 이동시간 평균 |
-| `desired_time_match_rate` | 시작시각 == 희망시각 비율 (배정 건 기준) |
+| `desired_time_match_rate` | 약속 시간대(시작 시각이 속한 1시간) == 희망 시간대 비율 (배정 건 기준) |
 | `worker_utilization` | 배정 작업소요 합 ÷ (작업자 가능시간 합 × 일수) |
 | `stage_{n}_share` | 매칭 n단계 배정 비율 (n = 1..단계 수) |
 

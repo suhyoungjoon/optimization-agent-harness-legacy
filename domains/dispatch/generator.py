@@ -236,11 +236,15 @@ def _inject_p5(rng, inst: Instance, spec: dict, cfg: dict):
     lo, hi = (hhmm_to_min(t) for t in g["hidden"])
     members = [w for w in inst.workers if w.branch == g["branch"]]
     chosen = rng.sample(members, round(len(members) * g["share_in_branch"]))
+    affected = []
     for w in chosen:
         # 근무시간(available)은 09시 출근으로 바뀌었지만 늘어난 시간은 연동되지 않아 시간역량은 매일 N
-        for day in range(1, inst.days + 1):
-            _set_windows(w, day, _subtract(w.windows(day), lo, hi))
-    return [], sorted(w.id for w in chosen)
+        before = {day: w.windows(day) for day in range(1, inst.days + 1)}
+        for day, windows in before.items():
+            _set_windows(w, day, _subtract(windows, lo, hi))
+        if any(w.windows(day) != windows for day, windows in before.items()):
+            affected.append(w.id)                  # 원래 그 시간에 역량이 없던 작업자(예: P3)는 정답이 아니다
+    return [], sorted(affected)
 
 
 INJECTORS = {"P1": _inject_p1, "P2": _inject_p2, "P3": _inject_p3, "P4": _inject_p4, "P5": _inject_p5}

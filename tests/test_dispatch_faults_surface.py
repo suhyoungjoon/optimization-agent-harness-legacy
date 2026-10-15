@@ -8,6 +8,7 @@ import copy
 import pytest
 
 from domains.dispatch.generator import generate
+from domains.dispatch.models import hhmm_to_min
 from domains.dispatch.pack import get_pack
 
 SEED = 42
@@ -107,3 +108,16 @@ def test_p5_visible_through_analysis_tools(pack):
     for wid in hidden:
         assert rows[wid]["available"] == "09:00-18:00"
         assert "09:00-" not in rows[wid]["capacity"]
+
+
+def test_demand_by_hour_counts_capacity_starting_inside_the_hour(pack):
+    inst, _ = generate(SEED, [])
+    w = inst.workers[0]
+    w.capacity = {d: [(hhmm_to_min("10:30"), hhmm_to_min("18:00"))] for d in range(1, inst.days + 1)}
+    others = [x for x in inst.workers if x.branch == w.branch and x is not w]
+    for x in others:
+        x.capacity = {d: [] for d in range(1, inst.days + 1)}
+    hours = next(t for t in pack.analysis_tools(inst, []) if t["name"] == "demand_by_hour")["handler"](
+        {"branch": w.branch})
+    rows = {r["hour"]: r["workers_available"] for r in hours["rows"]}
+    assert rows["09"] == 0 and rows["10"] == 1      # 10:30 시작이어도 10~11시 약속은 받을 수 있다
