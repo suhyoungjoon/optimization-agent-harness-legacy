@@ -65,8 +65,8 @@ def test_param_violation_inside_override_rule(params):
 
 
 def test_whole_list_path_checks_every_element(params):
-    cap = {"type": "param", "path": "matching.time_window_min", "max": 90, "source": "s"}
-    candidate = apply_params(params, {"params_changes": [{"path": "matching.time_window_min[2]", "value": 120}]})
+    cap = {"type": "param", "path": "matching.time_window_min", "max": 150, "source": "s"}
+    candidate = apply_params(params, {"params_changes": [{"path": "matching.time_window_min[2]", "value": 180}]})
     assert constraint_violations([cap], params) == []
     assert len(constraint_violations([cap], candidate)) == 1
 

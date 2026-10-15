@@ -29,7 +29,7 @@ def test_scale(base):
     assert len(inst.workers) == 30
     assert {w.branch for w in inst.workers} == {"A", "B", "C"}
     assert all(sum(w.branch == b for w in inst.workers) == 10 for b in "ABC")
-    assert len(inst.orders) == 150 * 10
+    assert len(inst.orders) == 185 * 10
     assert len({o.id for o in inst.orders}) == len(inst.orders)
     assert all(w.skills for w in inst.workers)
 
@@ -133,7 +133,7 @@ def test_faults_leave_base_capacity_untouched(base):
 def test_p5_hides_nine_oclock_capacity(base):
     inst, truth = generate(SEED, ["P5"])
     hidden = set(truth["faults"]["P5"]["affected_workers"])
-    assert len(hidden) == 6
+    assert len(hidden) == 7 and all(inst.worker_index[w].branch == "A" for w in hidden)
     nine, ten = hhmm_to_min("09:00"), hhmm_to_min("10:00")
     for w in inst.workers:
         covers_nine = [any(s <= nine and ten <= e for s, e in w.windows(d)) for d in range(1, inst.days + 1)]

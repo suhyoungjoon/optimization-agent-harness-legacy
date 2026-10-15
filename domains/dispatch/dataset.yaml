@@ -10,7 +10,7 @@ branches:                        # 지점 ID → 표시 이름. 경계는 GeoJSO
 boundary_zone_km: 1              # 다른 지점과 맞닿은 관할 경계에서 이 거리 이내면 area_zone=boundary
 
 days: 10
-orders_per_day: 150
+orders_per_day: 185               # 1시간 방문창은 배정 여지가 커서 결함이 드러날 만큼 부하를 둔다
 workers_per_branch: 10
 
 day: {start: "08:00", end: "18:00"}

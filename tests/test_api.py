@@ -24,7 +24,7 @@ def client(tmp_path):
 def test_list_domains(client):
     body = client.get("/domains").json()
     dispatch = next(d for d in body if d["name"] == "dispatch")
-    assert [f["id"] for f in dispatch["faults"]] == ["P1", "P2", "P3", "P4"]
+    assert [f["id"] for f in dispatch["faults"]] == ["P1", "P2", "P3", "P4", "P5"]
     assert "answer" not in dispatch["faults"][0]
     assert "branch" in dispatch["dimensions"]["dimensions"]
 
@@ -33,10 +33,10 @@ def test_dataset_create_and_get(client):
     res = client.post("/domains/dispatch/datasets", json={"seed": 42, "faults": ["P1"]})
     assert res.status_code == 200
     ds = res.json()
-    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == 1500
+    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == 1850
 
     body = client.get(f"/domains/dispatch/datasets/{ds['id']}").json()
-    assert len(body["instance"]["orders"]) == 1500
+    assert len(body["instance"]["orders"]) == 1850
     assert len(body["instance"]["workers"]) == 30
     assert "truth" not in body and "affected_items" not in str(body)[:10000]
 
@@ -51,11 +51,11 @@ def test_rule_run_and_decisions(client):
     ds = client.post("/domains/dispatch/datasets", json={"seed": 7}).json()
     run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
     assert run["status"] == "done" and run["violations"] == []
-    assert run["seed"] == 7 and run["params_version"] == 1
+    assert run["seed"] == 7 and run["params_version"] == 2
 
     assert client.get(f"/runs/{run['run_id']}").json()["metrics"] == run["metrics"]
     decisions = client.get(f"/runs/{run['run_id']}/decisions").json()
-    assert len(decisions) == 1500
+    assert len(decisions) == 1850
     success = [d for d in decisions if d["status"] == "success"]
     assert len(success) / len(decisions) == pytest.approx(run["metrics"]["assignment_rate"])
 
@@ -159,7 +159,7 @@ def test_domain_definition_hides_answers_by_default(client):
     assert list(d["spec_sections"]) == ["목적", "필수 조건", "선호 조건", "판단 순서", "예외 처리", "사용 도구"]
     assert "violation_rules" in d["dimensions"] and "LLM_ERROR" in d["core_reason_codes"]
     assert d["files"]["params.yaml"] == "domains/dispatch/params.yaml"
-    assert [f["id"] for f in d["faults"]] == ["P1", "P2", "P3", "P4"]
+    assert [f["id"] for f in d["faults"]] == ["P1", "P2", "P3", "P4", "P5"]
     assert all(set(f) == {"id", "name", "expected"} for f in d["faults"])     # 주입 방식·정답 없음
     full = client.get("/domains/dispatch/definition?answers=true").json()
     assert all({"generation", "answer"} <= set(f) for f in full["faults"])

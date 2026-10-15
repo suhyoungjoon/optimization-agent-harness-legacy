@@ -234,7 +234,8 @@ def _inject_p4(rng, inst: Instance, spec: dict, cfg: dict):
 def _inject_p5(rng, inst: Instance, spec: dict, cfg: dict):
     g = spec["generation"]
     lo, hi = (hhmm_to_min(t) for t in g["hidden"])
-    chosen = rng.sample(inst.workers, round(len(inst.workers) * g["worker_share"]))
+    members = [w for w in inst.workers if w.branch == g["branch"]]
+    chosen = rng.sample(members, round(len(members) * g["share_in_branch"]))
     for w in chosen:
         # 근무시간(available)은 09시 출근으로 바뀌었지만 늘어난 시간은 연동되지 않아 시간역량은 매일 N
         for day in range(1, inst.days + 1):
