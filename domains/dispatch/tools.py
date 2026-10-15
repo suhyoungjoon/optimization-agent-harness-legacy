@@ -17,13 +17,14 @@ _WORKER_ID = {"type": "string", "description": "작업자 ID (예: WA03)"}
 TOOL_SPECS = [
     {
         "name": "get_order",
-        "description": "지시서의 소속 지점, 작업유형, 매체, 난이도, 건물유형, 희망시간, 좌표, 작업소요(분), 필요한 자격을 돌려준다.",
+        "description": "지시서의 소속 지점, 작업유형, 매체, 난이도, 건물유형, 희망시간, 좌표, 기본 작업소요(분), 필요한 자격을 돌려준다. "
+                       "실제 작업소요는 작업자 표준작업시간에 따라 다르며 find_candidates가 후보별로 돌려준다.",
         "input_schema": {"type": "object", "properties": {"order_id": _ORDER_ID}, "required": ["order_id"]},
     },
     {
         "name": "find_candidates",
         "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·개통/AS 역량·자격)과 시간·지역 범위를 만족하고 그날 시간역량과 일정에 "
-                       "들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간을 돌려준다. 1단계부터 조회한다.",
+                       "들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간, 그 작업자 기준 작업소요(분)를 돌려준다. 1단계부터 조회한다.",
         "input_schema": {
             "type": "object",
             "properties": {"order_id": _ORDER_ID, "stage": {"type": "integer", "minimum": 1, "maximum": 3}},
@@ -41,7 +42,7 @@ TOOL_SPECS = [
     },
     {
         "name": "get_worker_schedule",
-        "description": "작업자의 작업그룹, 기술, 개통/AS 역량(work_types), 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
+        "description": "작업자의 작업그룹, 기술, 개통/AS 역량(work_types), 표준작업시간(std_min: 작업유형별 기본 소요), 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
                        "(capacity: 일할 수 있는 구간 목록, 작업은 한 구간 안에서 시작·종료)과 그날 이미 배정된 작업 일정을 돌려준다.",
         "input_schema": {"type": "object", "properties": {"worker_id": _WORKER_ID}, "required": ["worker_id"]},
     },
@@ -82,7 +83,8 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             "order_id": o.id, "day": o.day, "branch": o.branch, "work_type": o.work_type,
             "media": o.media, "difficulty": o.difficulty, "building_type": o.building_type,
             "desired_time": min_to_hhmm(o.desired), "x": o.x, "y": o.y,
-            "duration_min": rule_engine.duration_min(o, params),
+            # 작업소요는 작업자 표준작업시간에 따라 다르다. 여기서는 기본 소요 기준, 후보별 값은 find_candidates
+            "default_duration_min": rule_engine.duration_min(o, params),
             "required_cert": rule_engine.REQUIRED_CERT.get(o.difficulty),
             "outside_jurisdiction_km": round(inst.distance_outside(o.branch, o.x, o.y), 2),
         }
@@ -105,7 +107,8 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
                        "certified": len(certified)},
             "candidates": [
                 {"worker_id": s.worker.id, "cei": s.worker.cei, "master": s.worker.cei >= threshold,
-                 "start_time": min_to_hhmm(s.start), "travel_min": s.travel}
+                 "start_time": min_to_hhmm(s.start), "travel_min": s.travel,
+                 "duration_min": rule_engine.duration_min(o, params, s.worker)}
                 for s in sorted(slots, key=lambda s: s.worker.id)
             ],
         }
@@ -126,7 +129,7 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
         jobs = rule_engine.schedules_from(inst, ctx.decisions, params).get((w.id, day), [])
         return {
             "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,
-            "work_types": w.work_types, "certs": w.certs, "cei": w.cei,
+            "work_types": w.work_types, "std_min": w.std_min, "certs": w.certs, "cei": w.cei,
             "master": w.cei >= params["cei"]["master_threshold"],
             "available": [min_to_hhmm(w.available[0]), min_to_hhmm(w.available[1])],
             "day": day,

@@ -25,7 +25,8 @@ def call(pack, inst, name, args, item_id, decisions=()):
 
 def test_get_order(pack, small):  # noqa: F811
     got = call(pack, small, "get_order", {"order_id": "O3"}, "O3")
-    assert got["duration_min"] == 90 and got["required_cert"] == "pole" and got["desired_time"] == "09:00"
+    # 기본 소요(params) 기준 30 × 1.5. 작업자별 값은 find_candidates가 준다
+    assert got["default_duration_min"] == 45 and got["required_cert"] == "pole" and got["desired_time"] == "09:00"
 
 
 def test_find_candidates_follows_schedule(pack, small):  # noqa: F811
@@ -33,7 +34,7 @@ def test_find_candidates_follows_schedule(pack, small):  # noqa: F811
     # 09:53 시작이어도 약속 시간대(09~10시)가 희망과 같아 1단계 후보
     stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", before)
     assert stage1["candidates"] == [
-        {"worker_id": "W2", "cei": 60, "master": False, "start_time": "09:53", "travel_min": 8}]
+        {"worker_id": "W2", "cei": 60, "master": False, "start_time": "09:53", "travel_min": 8, "duration_min": 90}]
     assert stage1["funnel"] == {"branch": 2, "skilled": 2, "work_type": 2, "certified": 1}
     busy = before + [placed("O8", "W2", "09:53")]   # W2 09:53~10:38 → O3 90분은 12시 N 전에 못 끝남, 13시 시간대
     stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", busy)

@@ -32,7 +32,7 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
             if (branch and w.branch != branch) or (group and w.group != group):
                 continue
             jobs = [d for d in placed if d.decision.get("worker_id") == w.id]
-            busy = sum(duration_min(inst.order_index[d.item_id], params) for d in jobs)
+            busy = sum(duration_min(inst.order_index[d.item_id], params, w) for d in jobs)
             available = sum(e - s for d in day_list for s, e in w.windows(d))
             rows.append({
                 "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,

@@ -35,9 +35,9 @@ def compute(inst: Instance, decisions: list[DecisionRecord], params: dict) -> di
     for jobs in routes.values():
         jobs.sort(key=lambda j: j[0])
         px, py = jobs[0][1].x, jobs[0][1].y
-        for _start, _worker, order in jobs:
+        for _start, worker, order in jobs:
             travels.append(travel_min(px, py, order.x, order.y, params))
-            busy += duration_min(order, params)
+            busy += duration_min(order, params, worker)
             px, py = order.x, order.y
     # 가용시간: 작업자별 그날 시간역량(Y 구간) 합
     available = sum(e - s for w in inst.workers for day in inst.active_days() for s, e in w.windows(day))
