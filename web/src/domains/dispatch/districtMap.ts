@@ -16,6 +16,7 @@ export interface Worker {
   capacity?: Record<string, [number, number][]>;
   work_types?: string[];   // 개통/AS 역량 (install, repair)
   group?: string;          // 작업그룹
+  std_min?: Record<string, number>;   // 표준작업시간: 작업유형 → 기본 소요(분)
 }
 export interface Order {
   id: string;

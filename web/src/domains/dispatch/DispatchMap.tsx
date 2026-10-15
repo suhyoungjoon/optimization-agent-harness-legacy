@@ -157,6 +157,12 @@ export default function DispatchMap({ instance, decisions, reasonLabels, reasonD
                   {(hover.worker.work_types ?? ["install", "repair"]).map((t) => valueLabel(t)).join("·")}
                 </div>
                 <div>자격 {hover.worker.certs.join(", ") || "없음"} · CEI {hover.worker.cei}</div>
+                {hover.worker.std_min && (
+                  <div>
+                    표준시간{" "}
+                    {Object.entries(hover.worker.std_min).map(([t, m]) => `${valueLabel(t)} ${m}분`).join(" · ")}
+                  </div>
+                )}
                 <div>
                   근무 {hhmm(hover.worker.available[0])}~{hhmm(hover.worker.available[1])} · 시간역량{" "}
                   {windowsOf(hover.worker, day).map(([s, e]) => `${hhmm(s)}~${hhmm(e)}`).join(", ") || "없음"} · 당일 {hover.jobs}건
