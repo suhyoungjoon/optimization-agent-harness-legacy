@@ -115,6 +115,24 @@ def _make_orders(rng: random.Random, cfg: dict, branches: dict) -> list[Order]:
     return orders
 
 
+# --- 개통/AS 역량 (레가시 #5), 작업그룹 (레가시 #10) -----------------------------------
+
+def _make_roles(rng: random.Random, cfg: dict, workers: list[Worker]) -> None:
+    wt = cfg["workers"]["work_types"]
+    n_install, n_repair = (round(len(workers) * wt[k]) for k in ("install_only", "repair_only"))
+    single = rng.sample(workers, n_install + n_repair)
+    for w in single[:n_install]:
+        w.work_types = ["install"]
+    for w in single[n_install:]:
+        w.work_types = ["repair"]
+    n_groups = cfg["workers"]["groups_per_branch"]
+    for branch in sorted({w.branch for w in workers}):
+        members = [w for w in workers if w.branch == branch]
+        rng.shuffle(members)
+        for i, w in enumerate(members):
+            w.group = f"{branch}{i % n_groups + 1}"
+
+
 # --- 일자별 시간역량 (레가시 #2, #8, #9) -----------------------------------------
 # 구간은 [시작, 종료) 분. 기본 근무시간과 같은 날은 적지 않는다 (Worker.windows가 기본 근무시간을 돌려준다).
 
@@ -262,6 +280,7 @@ def generate(seed: int, faults: list[str]) -> tuple[Instance, dict]:
     workers = _make_workers(rng, cfg, branches)
     orders = _make_orders(rng, cfg, branches)
     _make_capacity(random.Random(f"{seed}-capacity"), cfg, workers, cfg["days"])
+    _make_roles(random.Random(f"{seed}-roles"), cfg, workers)
     inst = Instance(branches=branches, boundary_zone_km=cfg["boundary_zone_km"],
                     workers=workers, orders=orders, days=cfg["days"], geo=geo)
 

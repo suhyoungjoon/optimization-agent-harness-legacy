@@ -38,3 +38,7 @@ workers:
   skill_prob: {HFC: 0.5, FTTx: 0.7, CATV: 0.4}   # 기술별 보유 확률 (최소 1개 보장)
   cert_share: {pole: 0.3, high_risk: 0.3}        # 자격 보유 비율 (지점별로 고르게 배분)
   cei_range: [50, 100]
+  work_types:                    # 개통/AS 역량 (레가시 #5): 대부분 둘 다, 일부만 한쪽 전담
+    install_only: 0.10
+    repair_only: 0.05
+  groups_per_branch: 2           # 작업그룹 (레가시 #10): 지점 작업자를 고르게 나눈다
