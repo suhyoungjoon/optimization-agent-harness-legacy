@@ -92,3 +92,10 @@ def test_check_assignment_catches_overlap_with_later_job(pack, small):  # noqa: 
     # 겹침은 늦게 시작하는 O2에 기록되지만, O3를 넣어서 생긴 위반으로 돌려준다
     assert got["ok"] is False
     assert [(v["item_id"], v["rule"]) for v in got["violations"]] == [("O2", "schedule_overlap")]
+
+
+def test_worker_stats_filters_by_group(pack):
+    inst, _ = generate(42, [])
+    stats = next(t for t in pack.analysis_tools(inst, []) if t["name"] == "worker_stats")["handler"]({"group": "A1"})
+    assert stats["workers"] == 5
+    assert all(r["group"] == "A1" and r["branch"] == "A" and r["work_types"] for r in stats["rows"])
