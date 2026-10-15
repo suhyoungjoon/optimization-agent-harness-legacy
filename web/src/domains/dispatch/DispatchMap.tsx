@@ -2,7 +2,7 @@ import L from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DecisionRecord } from "../../types";
 import type { ResultViewProps } from "../types";
-import { branchColor, hhmm, slot, useDistrictMap, valueLabel, type Instance, type Order, type Worker } from "./districtMap";
+import { branchColor, hhmm, slot, useDistrictMap, valueLabel, windowsOf, type Instance, type Order, type Worker } from "./districtMap";
 
 type Hover =
   | { kind: "order"; order: Order; record?: DecisionRecord; x: number; y: number }
@@ -154,7 +154,8 @@ export default function DispatchMap({ instance, decisions, reasonLabels, reasonD
                 <div>기술 {hover.worker.skills.join(", ")}</div>
                 <div>자격 {hover.worker.certs.join(", ") || "없음"} · CEI {hover.worker.cei}</div>
                 <div>
-                  가능 {hhmm(hover.worker.available[0])}~{hhmm(hover.worker.available[1])} · 당일 {hover.jobs}건
+                  근무 {hhmm(hover.worker.available[0])}~{hhmm(hover.worker.available[1])} · 시간역량{" "}
+                  {windowsOf(hover.worker, day).map(([s, e]) => `${hhmm(s)}~${hhmm(e)}`).join(", ") || "없음"} · 당일 {hover.jobs}건
                 </div>
               </>
             )}

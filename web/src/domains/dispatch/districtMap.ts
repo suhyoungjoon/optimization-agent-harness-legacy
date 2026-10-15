@@ -12,6 +12,8 @@ export interface Worker {
   x: number;
   y: number;
   available: [number, number];
+  // 일자별 시간역량: 날짜 → 일할 수 있는 구간 목록. 기본 근무시간과 다른 날만 있다 (빈 목록 = 하루 전체 N)
+  capacity?: Record<string, [number, number][]>;
 }
 export interface Order {
   id: string;
@@ -48,6 +50,9 @@ export const VALUE_LABELS: Record<string, string> = {
   house: "주택", apartment: "아파트", core: "관할 안쪽", boundary: "경계 지역",
 };
 export const valueLabel = (v: string) => VALUE_LABELS[v] ?? v;
+
+/** 그날 일할 수 있는 구간 (없는 날은 기본 근무시간). */
+export const windowsOf = (w: Worker, day: number): [number, number][] => w.capacity?.[String(day)] ?? [w.available];
 
 export const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 export const branchColor = (b: string) => `var(--series-${BRANCH_SLOT[b] ?? 1})`;
