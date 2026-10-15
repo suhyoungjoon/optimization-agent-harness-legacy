@@ -29,7 +29,7 @@ def test_scale(base):
     assert len(inst.workers) == 30
     assert {w.branch for w in inst.workers} == {"A", "B", "C"}
     assert all(sum(w.branch == b for w in inst.workers) == 10 for b in "ABC")
-    assert len(inst.orders) == 185 * 10
+    assert len(inst.orders) == 380 * 10
     assert len({o.id for o in inst.orders}) == len(inst.orders)
     assert all(w.skills for w in inst.workers)
 

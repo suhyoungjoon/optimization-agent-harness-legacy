@@ -33,10 +33,10 @@ def test_dataset_create_and_get(client):
     res = client.post("/domains/dispatch/datasets", json={"seed": 42, "faults": ["P1"]})
     assert res.status_code == 200
     ds = res.json()
-    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == 1850
+    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == 3800
 
     body = client.get(f"/domains/dispatch/datasets/{ds['id']}").json()
-    assert len(body["instance"]["orders"]) == 1850
+    assert len(body["instance"]["orders"]) == 3800
     assert len(body["instance"]["workers"]) == 30
     assert "truth" not in body and "affected_items" not in str(body)[:10000]
 
@@ -51,11 +51,11 @@ def test_rule_run_and_decisions(client):
     ds = client.post("/domains/dispatch/datasets", json={"seed": 7}).json()
     run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
     assert run["status"] == "done" and run["violations"] == []
-    assert run["seed"] == 7 and run["params_version"] == 2
+    assert run["seed"] == 7 and run["params_version"] == 3
 
     assert client.get(f"/runs/{run['run_id']}").json()["metrics"] == run["metrics"]
     decisions = client.get(f"/runs/{run['run_id']}/decisions").json()
-    assert len(decisions) == 1850
+    assert len(decisions) == 3800
     success = [d for d in decisions if d["status"] == "success"]
     assert len(success) / len(decisions) == pytest.approx(run["metrics"]["assignment_rate"])
 

@@ -80,9 +80,9 @@ def test_subset_one_day(pack):
     inst, _ = generate(42, [])
     day1 = [i for i in pack.items(inst) if i.startswith("D01-")]
     sub = pack.subset(inst, day1)
-    assert len(sub.orders) == 185 and sub.days == 1
+    assert len(sub.orders) == 380 and sub.days == 1
     records = pack.solve(sub, pack.params)
-    assert len(records) == 185 and pack.validate(sub, records) == []
+    assert len(records) == 380 and pack.validate(sub, records) == []
     assert 0 < pack.metrics(sub, records)["worker_utilization"] < 1
 
 

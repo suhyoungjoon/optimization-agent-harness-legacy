@@ -73,7 +73,11 @@ def test_p4_boundary_orders_fail_and_recover_with_one_km(pack):
     relaxed["matching"]["area_extension_km"][-1] += 1
     _, _, after = run(pack, ["P4"], relaxed)
     rate = lambda recs: sum(r.status == "success" for r in recs) / len(recs)  # noqa: E731
-    assert rate(after) >= rate(records) + 0.1
+    # 경계 밖 고객 대부분이 살아난다. 전체 배정률도 오르지만, 부하가 높아 살아난 고객이 다른 지시서의 자리를
+    # 차지하기도 해서 전체 증가폭은 살아난 비율보다 작다
+    affected_rate = lambda recs: sum(r.status == "success" for r in recs if r.item_id in affected) / len(affected)  # noqa: E731
+    assert affected_rate(after) >= affected_rate(records) + 0.5
+    assert rate(after) >= rate(records) + 0.05
 
 
 def test_p3_visible_through_analysis_tools(pack):

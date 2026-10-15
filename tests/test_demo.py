@@ -64,7 +64,7 @@ def build_session(tmp_path, files):
     client.post(f"/proposals/{spec['id']}/simulate", json={"confirm": True, "level": "L1", "scope": scope[:3]})
     wait(client, f"/proposals/{spec['id']}")
     client.post(f"/proposals/{ok['id']}/approve", json={"note": "원본 세션 승인"})
-    assert yaml.safe_load((files / "params.yaml").read_text(encoding="utf-8"))["version"] == 3   # 세션의 작업 파일은 v3
+    assert yaml.safe_load((files / "params.yaml").read_text(encoding="utf-8"))["version"] == 4   # 세션의 작업 파일은 v4
     return ds, scope
 
 
@@ -113,8 +113,8 @@ def open_demo(bundle_dir, tmp_path):
 def test_export_resets_decisions_and_snapshots_committed_files(bundle):
     out, manifest, _ds, _scope = bundle
     assert manifest["counts"]["ai_runs"] >= 2 and manifest["counts"]["reports"] == 1
-    # 세션에서 v3로 승인했지만, 번들은 git HEAD(커밋된 v2)에서 시작한다
-    assert yaml.safe_load((out / "domains/dispatch/params.yaml").read_text(encoding="utf-8"))["version"] == 2
+    # 세션에서 v4로 승인했지만, 번들은 git HEAD(커밋된 v3)에서 시작한다
+    assert yaml.safe_load((out / "domains/dispatch/params.yaml").read_text(encoding="utf-8"))["version"] == 3
     assert manifest["domain_file_sources"]["dispatch/params.yaml"] == "git:HEAD"
     db = sqlite3.connect(out / "harness.db")
     statuses = sorted(r[0] for r in db.execute("SELECT status FROM proposals"))
@@ -137,7 +137,7 @@ def test_demo_runs_full_flow_offline(bundle, tmp_path, offline):
         # 데이터 생성과 규칙 agent는 실제로 계산한다
         assert client.post("/domains/dispatch/datasets", json={"seed": 42, "faults": ["P4"]}).json()["id"] == ds["id"]
         rule = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
-        assert rule["status"] == "done" and rule["params_version"] == 2
+        assert rule["status"] == "done" and rule["params_version"] == 3
 
         # AI 실행은 저장된 결과를 재생 (진행률을 보여준 뒤 done)
         res = client.post("/runs", json={"dataset_id": ds["id"], "agent": "ai", "level": "L3", "repeats": 2,
@@ -171,11 +171,11 @@ def test_demo_runs_full_flow_offline(bundle, tmp_path, offline):
 
         # 승인은 작업 복사본에만 반영된다
         approved = client.post(f"/proposals/{ok['id']}/approve", json={"note": "시연 승인"}).json()
-        assert approved["decision"]["params_version_after"] == 3
+        assert approved["decision"]["params_version_after"] == 4
         work_params = Path(info["work_dir"]) / "domains/dispatch/params.yaml"
-        assert yaml.safe_load(work_params.read_text(encoding="utf-8"))["version"] == 3
+        assert yaml.safe_load(work_params.read_text(encoding="utf-8"))["version"] == 4
         rule2 = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
-        assert rule2["params_version"] == 3 and rule2["metrics"]["assignment_rate"] > rule["metrics"]["assignment_rate"]
+        assert rule2["params_version"] == 4 and rule2["metrics"]["assignment_rate"] > rule["metrics"]["assignment_rate"]
         assert [h["round"] for h in client.get("/history").json()] == [1]
     finally:
         set_domain_files_root(None)
@@ -187,7 +187,7 @@ def test_demo_runs_full_flow_offline(bundle, tmp_path, offline):
     try:
         again = open_demo(out, tmp_path)
         assert again.get("/history").json() == []
-        assert again.get("/domains/dispatch/params").json()["params"]["version"] == 2
+        assert again.get("/domains/dispatch/params").json()["params"]["version"] == 3
     finally:
         set_domain_files_root(None)
 

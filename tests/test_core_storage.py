@@ -55,7 +55,7 @@ def test_rule_run_roundtrip(store):
     assert run["violations"] == []
     assert 0 < run["metrics"]["assignment_rate"] <= 1
     decisions = store.get_decisions(run_id)
-    assert len(decisions) == 1850
+    assert len(decisions) == 3800
     assert set(decisions[0]) >= {"item_id", "decision", "status", "reason_code", "evidence", "dims", "metrics"}
 
 

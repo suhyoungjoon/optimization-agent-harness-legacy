@@ -23,8 +23,8 @@ def test_one_axis_reproduces_area_extension_numbers(setup):
     out = sweep_params(factory, inst, params, [{"path": "matching.area_extension_km[2]", "values": [3, 4, 5]}])
     assert [p["values"]["matching.area_extension_km[2]"] for p in out["points"]] == [3, 4, 5]
     by = {p["values"]["matching.area_extension_km[2]"]: p for p in out["points"]}
-    assert count(by[3], "assignment_rate") == 1344 and count(by[3], "on_time_rate") == 940
-    assert abs(count(by[4], "assignment_rate") - 1507) <= 1 and abs(count(by[4], "on_time_rate") - 814) <= 1
+    assert count(by[3], "assignment_rate") == 2664 and count(by[3], "on_time_rate") == 1621
+    assert abs(count(by[4], "assignment_rate") - 2981) <= 1 and abs(count(by[4], "on_time_rate") - 1275) <= 1
     assert by[4]["metrics"] == by[5]["metrics"]                       # 4km 이상은 같다
     assert all(p["violations"] == 0 for p in out["points"])
     assert out["axes"][0]["kind"] == "policy" and not out["warnings"]
@@ -41,18 +41,18 @@ def test_two_axes_make_a_grid(setup):
     # 두 축이 실제로 적용됐는지: 조합마다 결과가 다르다
     got = {(p["values"]["matching.area_extension_km[2]"], p["values"]["matching.time_window_min[2]"]):
            (count(p, "assignment_rate"), count(p, "on_time_rate")) for p in out["points"]}
-    assert got[(3, 120)] == (1344, 940) and abs(got[(4, 120)][0] - 1507) <= 1
+    assert got[(3, 120)] == (2664, 1621) and abs(got[(4, 120)][0] - 2981) <= 1
     assert len(set(got.values())) == 4
 
 
 def test_estimate_axis_is_allowed_but_marked(setup):
     """추정값 탐색은 허용하되 표시한다: 지표가 좋아져도 '가정만 바꾼 가짜 개선'이다."""
     factory, inst, params = setup
-    out = sweep_params(factory, inst, params, [{"path": "duration.base_min", "values": [
-        {"install": 60, "repair": 45}, {"install": 45, "repair": 45}]}])
+    # 작업소요는 작업자 표준작업시간을 따르므로(duration.base_min은 등록 없는 작업자용) 이동 속도로 본다
+    out = sweep_params(factory, inst, params, [{"path": "travel.avg_speed_kmh", "values": [30, 40]}])
     assert out["axes"][0]["kind"] == "estimate" and out["warnings"]
     fast = out["points"][1]
-    assert abs(count(fast, "assignment_rate") - 1391) <= 1 and abs(count(fast, "on_time_rate") - 1059) <= 1
+    assert abs(count(fast, "assignment_rate") - 2696) <= 1 and abs(count(fast, "on_time_rate") - 1707) <= 1
     assert fast["violations"] == 0                                     # validate()도 같은 추정값으로 판정해서 막지 못한다
 
 
@@ -109,7 +109,7 @@ def test_sweep_api_caches_by_dataset_version_and_axes(tmp_path):
     body = {"dataset_id": ds["id"], "axes": [{"path": "matching.area_extension_km[2]", "values": [3, 4]}],
             "metrics": ["assignment_rate", "on_time_rate"]}
     first = client.post("/params/sweep", json=body).json()
-    assert first["cached"] is False and len(first["points"]) == 2 and first["params_version"] == 2
+    assert first["cached"] is False and len(first["points"]) == 2 and first["params_version"] == 3
     assert set(first["points"][0]["metrics"]) == {"assignment_rate", "on_time_rate"}
     assert client.post("/params/sweep", json=body).json()["cached"] is True
     bad = client.post("/params/sweep", json={**body, "axes": [{"path": "matching.area_extension_km[2]", "values": [9]}]})
