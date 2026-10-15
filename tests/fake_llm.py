@@ -12,13 +12,15 @@ def tool_use(name: str, input: dict) -> dict:
 
 
 def submit(item_id: str, worker_id: str | None = None, start: str | None = None, stage: int = 1,
-           reason: str | None = None) -> dict:
+           reason: str | None = None, day: int | None = None) -> dict:
     if worker_id is None:
         return tool_use("submit_decision", {"item_id": item_id, "action": "unassigned",
                                             "reason_code": reason, "evidence": "fake"})
+    decision = {"worker_id": worker_id, "start_time": start, "matching_stage": stage}
+    if day is not None:
+        decision["day"] = day
     return tool_use("submit_decision", {"item_id": item_id, "action": "assign", "evidence": "fake",
-                                        "decision": {"worker_id": worker_id, "start_time": start,
-                                                     "matching_stage": stage}})
+                                        "decision": decision})
 
 
 def item_of(messages: list[dict]) -> str:

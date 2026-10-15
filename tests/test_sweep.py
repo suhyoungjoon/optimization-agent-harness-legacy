@@ -23,8 +23,8 @@ def test_one_axis_reproduces_area_extension_numbers(setup):
     out = sweep_params(factory, inst, params, [{"path": "matching.area_extension_km[2]", "values": [3, 4, 5]}])
     assert [p["values"]["matching.area_extension_km[2]"] for p in out["points"]] == [3, 4, 5]
     by = {p["values"]["matching.area_extension_km[2]"]: p for p in out["points"]}
-    assert count(by[3], "assignment_rate") == 2664 and count(by[3], "on_time_rate") == 1621
-    assert abs(count(by[4], "assignment_rate") - 2981) <= 1 and abs(count(by[4], "on_time_rate") - 1275) <= 1
+    assert count(by[3], "assignment_rate") == 220 and count(by[3], "on_time_rate") == 0
+    assert abs(count(by[4], "assignment_rate") - 450) <= 1 and abs(count(by[4], "on_time_rate") - 72) <= 1
     assert by[4]["metrics"] == by[5]["metrics"]                       # 4km 이상은 같다
     assert all(p["violations"] == 0 for p in out["points"])
     assert out["axes"][0]["kind"] == "policy" and not out["warnings"]
@@ -41,7 +41,7 @@ def test_two_axes_make_a_grid(setup):
     # 두 축이 실제로 적용됐는지: 조합마다 결과가 다르다
     got = {(p["values"]["matching.area_extension_km[2]"], p["values"]["matching.time_window_min[2]"]):
            (count(p, "assignment_rate"), count(p, "on_time_rate")) for p in out["points"]}
-    assert got[(3, 120)] == (2664, 1621) and abs(got[(4, 120)][0] - 2981) <= 1
+    assert got[(3, 120)] == (220, 0) and abs(got[(4, 120)][0] - 450) <= 1
     assert len(set(got.values())) == 4
 
 
@@ -52,7 +52,7 @@ def test_estimate_axis_is_allowed_but_marked(setup):
     out = sweep_params(factory, inst, params, [{"path": "travel.avg_speed_kmh", "values": [30, 40]}])
     assert out["axes"][0]["kind"] == "estimate" and out["warnings"]
     fast = out["points"][1]
-    assert abs(count(fast, "assignment_rate") - 2696) <= 1 and abs(count(fast, "on_time_rate") - 1707) <= 1
+    assert abs(count(fast, "assignment_rate") - 230) <= 1 and abs(count(fast, "on_time_rate") - 8) <= 1
     assert fast["violations"] == 0                                     # validate()도 같은 추정값으로 판정해서 막지 못한다
 
 
@@ -85,7 +85,7 @@ def test_sensitivity_shows_flat_knobs(setup):
     out = sensitivity(factory, inst, params, steps=4)
     rows = {r["path"]: r for r in out["rows"]}
     assert set(rows) == {f"matching.{k}[{i}]" for k in ("time_window_min", "area_extension_km") for i in range(3)} | {
-        "cei.master_threshold"}                                         # policy만
+        "cei.master_threshold", "reschedule.max_days_after"}            # policy만
     # 2단계 관할은 3단계 값(3km) 이하에서는 결과가 같다 (의미 없는 손잡이). 3단계보다 넓히면 그때부터 달라진다
     stage2 = rows["matching.area_extension_km[1]"]
     within = [pt["metrics"] for pt in stage2["points"] if pt["values"]["matching.area_extension_km[1]"] <= 3]
@@ -109,7 +109,7 @@ def test_sweep_api_caches_by_dataset_version_and_axes(tmp_path):
     body = {"dataset_id": ds["id"], "axes": [{"path": "matching.area_extension_km[2]", "values": [3, 4]}],
             "metrics": ["assignment_rate", "on_time_rate"]}
     first = client.post("/params/sweep", json=body).json()
-    assert first["cached"] is False and len(first["points"]) == 2 and first["params_version"] == 3
+    assert first["cached"] is False and len(first["points"]) == 2 and first["params_version"] == 4
     assert set(first["points"][0]["metrics"]) == {"assignment_rate", "on_time_rate"}
     assert client.post("/params/sweep", json=body).json()["cached"] is True
     bad = client.post("/params/sweep", json={**body, "axes": [{"path": "matching.area_extension_km[2]", "values": [9]}]})
