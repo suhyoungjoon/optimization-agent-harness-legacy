@@ -44,13 +44,13 @@
 
 ## 시작하기
 
-Python 3.11+, Node 20+, Git. 레포가 비공개라 클론하려면 GitHub 인증(`gh auth login` 또는 SSH 키)이 필요하다.
+Python 3.11+, Node 20+, Git. 비공개 레포라면 클론 전에 GitHub 인증(`gh auth login` 또는 SSH 키)이 필요하다.
 
 macOS / Linux:
 
 ```bash
-git clone https://github.com/suhyoungjoon/optimization-agent-harness.git
-cd optimization-agent-harness
+git clone https://github.com/suhyoungjoon/optimization-agent-harness-legacy.git
+cd optimization-agent-harness-legacy
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,workflow]"   # workflow: Agent workflow 탭 (LangGraph, 선택)
 pytest                                  # 테스트 (LLM 호출 없음)
@@ -62,9 +62,9 @@ Windows (PowerShell):
 
 ```powershell
 winget install Python.Python.3.11 OpenJS.NodeJS.LTS Git.Git GitHub.cli   # 없는 것만. 설치 후 새 터미널
-gh auth login                                          # 비공개 레포 접근
-git clone https://github.com/suhyoungjoon/optimization-agent-harness.git
-cd optimization-agent-harness
+gh auth login                                          # 비공개 레포일 때만
+git clone https://github.com/suhyoungjoon/optimization-agent-harness-legacy.git
+cd optimization-agent-harness-legacy
 py -3.11 -m venv .venv
 .venv\Scripts\Activate.ps1                              # 막히면: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 pip install -e ".[dev,workflow]"
