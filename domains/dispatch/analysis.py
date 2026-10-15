@@ -11,6 +11,7 @@ from .models import Instance, Worker, min_to_hhmm
 from .rule_engine import duration_min, parse_start
 
 _BRANCH = {"type": "string", "description": "지점 (A, B, C). 생략하면 전체"}
+_GROUP = {"type": "string", "description": "작업그룹 (예: A1). 생략하면 전체"}
 
 
 def _capacity_summary(w: Worker, days: list[int]) -> str:
@@ -25,16 +26,17 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
     days = len(day_list)
 
     def worker_stats(args: dict):
-        branch = args.get("branch")
+        branch, group = args.get("branch"), args.get("group")
         rows = []
         for w in inst.workers:
-            if branch and w.branch != branch:
+            if (branch and w.branch != branch) or (group and w.group != group):
                 continue
             jobs = [d for d in placed if d.decision.get("worker_id") == w.id]
             busy = sum(duration_min(inst.order_index[d.item_id], params) for d in jobs)
             available = sum(e - s for d in day_list for s, e in w.windows(d))
             rows.append({
-                "worker_id": w.id, "branch": w.branch, "skills": w.skills, "certs": w.certs, "cei": w.cei,
+                "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,
+                "work_types": w.work_types, "certs": w.certs, "cei": w.cei,
                 "available": f"{min_to_hhmm(w.available[0])}-{min_to_hhmm(w.available[1])}",
                 "capacity": _capacity_summary(w, day_list),
                 "jobs": len(jobs), "busy_min": busy, "available_min": available,
@@ -73,11 +75,11 @@ def build_analysis_tools(inst: Instance, decisions: list[DecisionRecord], params
     return [
         {
             "name": "worker_stats",
-            "description": "작업자별 기본 근무시간(available), 일자별 시간역량 요약(capacity: 일할 수 있는 구간별 일수), "
+            "description": "작업자별 작업그룹, 개통/AS 역량(work_types), 기본 근무시간(available), 일자별 시간역량 요약(capacity: 일할 수 있는 구간별 일수), "
                            "처리 건수, 작업시간(분), 시간역량 합계(분), 활용률(작업시간/본인 시간역량 합계). "
                            "sort_by 기준 오름차순(기본: 작업시간이 적은 순).",
             "input_schema": {"type": "object", "properties": {
-                "branch": _BRANCH, "limit": {"type": "integer", "minimum": 1, "maximum": 30},
+                "branch": _BRANCH, "group": _GROUP, "limit": {"type": "integer", "minimum": 1, "maximum": 30},
                 "sort_by": {"type": "string", "enum": ["busy_min", "jobs", "utilization", "available_min"]}}},
             "handler": worker_stats,
         },

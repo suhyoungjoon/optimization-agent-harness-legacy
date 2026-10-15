@@ -91,7 +91,7 @@ class DispatchPack:
         elif stage >= rules["matching_stage_gte"]:
             reasons.append(f"{stage}단계 매칭 배정")
         if rules.get("non_master") and worker.cei < threshold and stage is not None:
-            _pool, _skilled, certified = rule_engine.eligible_workers(instance, order)
+            *_, certified = rule_engine.eligible_workers(instance, order)
             schedules = rule_engine.schedules_from(instance, decisions, self.params, exclude=order.id)
             slots = rule_engine.stage_slots(instance, order, stage, certified,
                                             lambda w: schedules.get((w.id, order.day), []), self.params)

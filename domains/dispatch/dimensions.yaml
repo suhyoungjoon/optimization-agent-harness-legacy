@@ -19,11 +19,14 @@ resources:                      # 자원 단위 발견 (M12-d): 분석 발견의
       available: {label: 근무시간}
       capacity: {label: 시간역량}
       skills: {label: 기술}
+      work_types: {label: 개통/AS 역량}
+      group: {label: 작업그룹}
       certs: {label: 자격}
       branch: {label: 지점}
 
 reason_codes:                   # DecisionRecord.reason_code (status가 success가 아닐 때)
   NO_SKILL: 해당 매체 기술을 보유한 후보 없음
+  NO_WORK_TYPE: 작업유형(개통·장애) 역량을 보유한 후보 없음
   NO_CERT: 난이도(승주·고위험)에 필요한 자격을 보유한 후보 없음
   NO_TIME_MATCH: 3단계까지 완화해도 희망시간에 맞는 후보 없음
   OUT_OF_AREA: 3단계까지 완화해도 지역 범위 안에 후보 없음
@@ -33,6 +36,7 @@ reason_codes:                   # DecisionRecord.reason_code (status가 success�
 
 violation_rules:                # Violation.rule (validate()가 반환, 필수조건)
   skill_required: 작업자가 지시서 매체 기술을 보유하지 않음
+  work_type_required: 작업자가 지시서 작업유형(개통·장애) 역량을 보유하지 않음
   cert_required: 승주·고위험 작업에 필요한 자격이 없음
   schedule_overlap: 같은 작업자의 작업 시간이 겹침 (이동시간 포함)
   outside_availability: 작업자 그날 시간역량(일할 수 있는 구간) 밖에 배정

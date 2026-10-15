@@ -31,3 +31,9 @@ def test_active_days_come_from_orders():
     inst = Instance(branches={"A": Branch("A", square)}, boundary_zone_km=1, workers=[], orders=orders,
                     days=2, geo={})
     assert inst.active_days() == [2, 5]
+
+
+def test_work_types_and_group_defaults():
+    w = Worker("W1", "A", ["FTTx"], [], 90, 0, 0, DAY)
+    assert w.work_types == ["install", "repair"]          # 대부분 개통·장애를 같이 처리
+    assert w.group == ""

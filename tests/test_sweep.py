@@ -23,8 +23,8 @@ def test_one_axis_reproduces_area_extension_numbers(setup):
     out = sweep_params(factory, inst, params, [{"path": "matching.area_extension_km[2]", "values": [3, 4, 5]}])
     assert [p["values"]["matching.area_extension_km[2]"] for p in out["points"]] == [3, 4, 5]
     by = {p["values"]["matching.area_extension_km[2]"]: p for p in out["points"]}
-    assert count(by[3], "assignment_rate") == 1357 and count(by[3], "on_time_rate") == 961
-    assert abs(count(by[4], "assignment_rate") - 1525) <= 1 and abs(count(by[4], "on_time_rate") - 821) <= 1
+    assert count(by[3], "assignment_rate") == 1344 and count(by[3], "on_time_rate") == 940
+    assert abs(count(by[4], "assignment_rate") - 1507) <= 1 and abs(count(by[4], "on_time_rate") - 814) <= 1
     assert by[4]["metrics"] == by[5]["metrics"]                       # 4km 이상은 같다
     assert all(p["violations"] == 0 for p in out["points"])
     assert out["axes"][0]["kind"] == "policy" and not out["warnings"]
@@ -41,7 +41,7 @@ def test_two_axes_make_a_grid(setup):
     # 두 축이 실제로 적용됐는지: 조합마다 결과가 다르다
     got = {(p["values"]["matching.area_extension_km[2]"], p["values"]["matching.time_window_min[2]"]):
            (count(p, "assignment_rate"), count(p, "on_time_rate")) for p in out["points"]}
-    assert got[(3, 120)] == (1357, 961) and abs(got[(4, 120)][0] - 1525) <= 1
+    assert got[(3, 120)] == (1344, 940) and abs(got[(4, 120)][0] - 1507) <= 1
     assert len(set(got.values())) == 4
 
 
@@ -52,7 +52,7 @@ def test_estimate_axis_is_allowed_but_marked(setup):
         {"install": 60, "repair": 45}, {"install": 45, "repair": 45}]}])
     assert out["axes"][0]["kind"] == "estimate" and out["warnings"]
     fast = out["points"][1]
-    assert abs(count(fast, "assignment_rate") - 1402) <= 1 and abs(count(fast, "on_time_rate") - 1074) <= 1
+    assert abs(count(fast, "assignment_rate") - 1391) <= 1 and abs(count(fast, "on_time_rate") - 1059) <= 1
     assert fast["violations"] == 0                                     # validate()도 같은 추정값으로 판정해서 막지 못한다
 
 

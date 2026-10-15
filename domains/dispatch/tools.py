@@ -22,7 +22,7 @@ TOOL_SPECS = [
     },
     {
         "name": "find_candidates",
-        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·자격)과 시간·지역 범위를 만족하고 그날 시간역량과 일정에 "
+        "description": "지시서의 매칭 단계(1~3)에서 필수 조건(기술·개통/AS 역량·자격)과 시간·지역 범위를 만족하고 그날 시간역량과 일정에 "
                        "들어갈 수 있는 후보 작업자와 각자의 적합 시작 시각, 이동시간을 돌려준다. 1단계부터 조회한다.",
         "input_schema": {
             "type": "object",
@@ -41,7 +41,7 @@ TOOL_SPECS = [
     },
     {
         "name": "get_worker_schedule",
-        "description": "작업자의 기술, 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
+        "description": "작업자의 작업그룹, 기술, 개통/AS 역량(work_types), 자격, CEI, 기본 근무시간(available), 지금 처리 중인 지시서 날짜의 시간역량"
                        "(capacity: 일할 수 있는 구간 목록, 작업은 한 구간 안에서 시작·종료)과 그날 이미 배정된 작업 일정을 돌려준다.",
         "input_schema": {"type": "object", "properties": {"worker_id": _WORKER_ID}, "required": ["worker_id"]},
     },
@@ -92,7 +92,7 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
         stage = int(args.get("stage", 1))
         if not 1 <= stage <= len(params["matching"]["time_window_min"]):
             raise ToolError(f"stage는 1~{len(params['matching']['time_window_min'])}")
-        pool, skilled, certified = rule_engine.eligible_workers(inst, o)
+        pool, skilled, capable, certified = rule_engine.eligible_workers(inst, o)
         schedules = rule_engine.schedules_from(inst, ctx.decisions, params, exclude=o.id)
         slots = rule_engine.stage_slots(inst, o, stage, certified,
                                         lambda w: schedules.get((w.id, o.day), []), params)
@@ -101,7 +101,8 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
             "stage": stage,
             "time_window_min": params["matching"]["time_window_min"][stage - 1],
             "area_extension_km": params["matching"]["area_extension_km"][stage - 1],
-            "funnel": {"branch": len(pool), "skilled": len(skilled), "certified": len(certified)},
+            "funnel": {"branch": len(pool), "skilled": len(skilled), "work_type": len(capable),
+                       "certified": len(certified)},
             "candidates": [
                 {"worker_id": s.worker.id, "cei": s.worker.cei, "master": s.worker.cei >= threshold,
                  "start_time": min_to_hhmm(s.start), "travel_min": s.travel}
@@ -124,7 +125,8 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
         day = current.day if current else 1
         jobs = rule_engine.schedules_from(inst, ctx.decisions, params).get((w.id, day), [])
         return {
-            "worker_id": w.id, "branch": w.branch, "skills": w.skills, "certs": w.certs, "cei": w.cei,
+            "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,
+            "work_types": w.work_types, "certs": w.certs, "cei": w.cei,
             "master": w.cei >= params["cei"]["master_threshold"],
             "available": [min_to_hhmm(w.available[0]), min_to_hhmm(w.available[1])],
             "day": day,

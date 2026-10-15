@@ -14,6 +14,8 @@ export interface Worker {
   available: [number, number];
   // 일자별 시간역량: 날짜 → 일할 수 있는 구간 목록. 기본 근무시간과 다른 날만 있다 (빈 목록 = 하루 전체 N)
   capacity?: Record<string, [number, number][]>;
+  work_types?: string[];   // 개통/AS 역량 (install, repair)
+  group?: string;          // 작업그룹
 }
 export interface Order {
   id: string;

@@ -158,3 +158,31 @@ def test_p5_truth_skips_workers_p3_already_moved_to_afternoon():
     alone = set(generate(SEED, ["P5"])[1]["faults"]["P5"]["affected_workers"])
     assert p5 == alone - p3                            # 09시 시간역량이 원래 없던 작업자는 정답이 아니다
     assert alone & p3                                  # seed 42에서는 실제로 겹친다
+
+
+# --- 개통/AS 역량 (#5), 작업그룹 (#10) ---------------------------------------------
+
+def test_work_types_mostly_both(base):
+    inst, _ = base
+    kinds = [tuple(w.work_types) for w in inst.workers]
+    assert all(k in {("install", "repair"), ("install",), ("repair",)} for k in kinds)
+    # 30명 × (개통만 10%, 장애만 5%) → round: 3명, 2명 (1.5는 짝수 쪽 2로 반올림). 나머지 25명은 둘 다
+    counts = {k: kinds.count(k) for k in set(kinds)}
+    assert counts == {("install", "repair"): 25, ("install",): 3, ("repair",): 2}
+
+
+def test_groups_split_each_branch(base):
+    inst, _ = base
+    for b in "ABC":
+        members = [w for w in inst.workers if w.branch == b]
+        groups = {}
+        for w in members:
+            groups.setdefault(w.group, []).append(w.id)
+        assert sorted(groups) == [f"{b}1", f"{b}2"]
+        assert sorted(len(v) for v in groups.values()) == [5, 5]
+
+
+def test_faults_leave_work_types_and_groups_untouched(base):
+    inst, _ = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
+    attrs = lambda i: {w.id: (w.work_types, w.group) for w in i.workers}  # noqa: E731
+    assert attrs(inst) == attrs(base[0])
