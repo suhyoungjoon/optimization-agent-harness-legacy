@@ -41,4 +41,8 @@ workers:
   work_types:                    # 개통/AS 역량 (레가시 #5): 대부분 둘 다, 일부만 한쪽 전담. 인원은 round(전체 × 비율)
     install_only: 0.10
     repair_only: 0.05
+  std_time:                      # 작업자별 표준작업시간 (레가시 #4): 작업유형 기본 소요 × 계수, step_min 단위
+    base_min: {install: 30, repair: 20}
+    factor: [0.8, 1.2]
+    step_min: 5
   groups_per_branch: 2           # 작업그룹 (레가시 #10): 지점 작업자를 고르게 나눈다

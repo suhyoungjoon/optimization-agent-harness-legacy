@@ -37,3 +37,7 @@ def test_work_types_and_group_defaults():
     w = Worker("W1", "A", ["FTTx"], [], 90, 0, 0, DAY)
     assert w.work_types == ["install", "repair"]          # 대부분 개통·장애를 같이 처리
     assert w.group == ""
+
+
+def test_std_min_defaults_empty():
+    assert Worker("W1", "A", ["FTTx"], [], 90, 0, 0, DAY).std_min == {}

@@ -115,7 +115,7 @@ def _make_orders(rng: random.Random, cfg: dict, branches: dict) -> list[Order]:
     return orders
 
 
-# --- 개통/AS 역량 (레가시 #5), 작업그룹 (레가시 #10) -----------------------------------
+# --- 개통/AS 역량 (레가시 #5), 표준작업시간 (#4), 작업그룹 (#10) -----------------------------------
 
 def _make_roles(rng: random.Random, cfg: dict, workers: list[Worker]) -> None:
     wt = cfg["workers"]["work_types"]
@@ -131,6 +131,11 @@ def _make_roles(rng: random.Random, cfg: dict, workers: list[Worker]) -> None:
         rng.shuffle(members)
         for i, w in enumerate(members):
             w.group = f"{branch}{i % n_groups + 1}"
+    std = cfg["workers"]["std_time"]
+    step = std["step_min"]
+    for w in workers:
+        w.std_min = {t: max(step, round(base * rng.uniform(*std["factor"]) / step) * step)
+                     for t, base in std["base_min"].items()}
 
 
 # --- 일자별 시간역량 (레가시 #2, #8, #9) -----------------------------------------
