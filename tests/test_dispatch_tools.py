@@ -34,7 +34,7 @@ def test_find_candidates_follows_schedule(pack, small):  # noqa: F811
     stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", before)
     assert stage1["candidates"] == [
         {"worker_id": "W2", "cei": 60, "master": False, "start_time": "09:53", "travel_min": 8}]
-    assert stage1["funnel"] == {"branch": 2, "skilled": 2, "certified": 1}
+    assert stage1["funnel"] == {"branch": 2, "skilled": 2, "work_type": 2, "certified": 1}
     busy = before + [placed("O8", "W2", "09:53")]   # W2 09:53~10:38 → O3 90분은 12시 N 전에 못 끝남, 13시 시간대
     stage1 = call(pack, small, "find_candidates", {"order_id": "O3", "stage": 1}, "O3", busy)
     assert stage1["candidates"] == []
@@ -47,6 +47,7 @@ def test_travel_and_schedule(pack, small):  # noqa: F811
     sched = call(pack, small, "get_worker_schedule", {"worker_id": "W2"}, "O3", before)
     assert sched["jobs"] == [{"order_id": "O2", "start": "09:00", "end": "09:45", "x": 5, "y": 5}]
     assert sched["certs"] == ["pole"] and sched["master"] is False
+    assert sched["work_types"] == ["install", "repair"] and sched["group"] == ""
     assert sched["available"] == ["09:00", "18:00"]
     assert sched["capacity"] == [["09:00", "12:00"], ["13:00", "18:00"]]   # 그날 일할 수 있는 구간
 

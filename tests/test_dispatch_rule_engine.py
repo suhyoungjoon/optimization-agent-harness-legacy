@@ -154,6 +154,27 @@ def test_solve_with_p5_has_no_violations(faults):
     assert rule_engine.validate(inst, rule_engine.solve(inst, PARAMS), PARAMS) == []
 
 
+def test_validate_requires_work_type(small):
+    small.workers[0].work_types = ["install"]                      # W1은 개통만
+    violations = rule_engine.validate(small, [decide("O2", "W1", "10:00")], PARAMS)   # O2는 장애(repair)
+    rules = [(v.rule, v.item_id) for v in violations]
+    assert ("work_type_required", "O2") in rules
+
+
+def test_solve_reports_no_work_type(small):
+    small.workers[0].work_types = ["install"]
+    small.workers[1].work_types = ["install"]
+    small.orders = [order("P1", "10:00", 2, 3, work_type="repair")]
+    got = rule_engine.solve(small, PARAMS)[0]
+    assert got.status == "failed" and got.reason_code == "NO_WORK_TYPE"
+    assert "장애 역량 0명" in got.evidence
+
+
+def test_funnel_lists_work_type_step(small):
+    got = by_id(rule_engine.solve(small, PARAMS))
+    assert "FTTx 기술 2명 → 개통 역량 2명" in got["O1"].evidence
+
+
 def test_solve_is_deterministic():
     inst, _ = generate(7, ["P1"])
     assert rule_engine.solve(inst, PARAMS) == rule_engine.solve(inst, PARAMS)

@@ -150,8 +150,12 @@ export default function DispatchMap({ instance, decisions, reasonLabels, reasonD
               <>
                 <strong>
                   {hover.worker.id} · {branchName(hover.worker.branch)}
+                  {hover.worker.group ? ` · 그룹 ${hover.worker.group}` : ""}
                 </strong>
-                <div>기술 {hover.worker.skills.join(", ")}</div>
+                <div>
+                  기술 {hover.worker.skills.join(", ")} · 역량{" "}
+                  {(hover.worker.work_types ?? ["install", "repair"]).map((t) => valueLabel(t)).join("·")}
+                </div>
                 <div>자격 {hover.worker.certs.join(", ") || "없음"} · CEI {hover.worker.cei}</div>
                 <div>
                   근무 {hhmm(hover.worker.available[0])}~{hhmm(hover.worker.available[1])} · 시간역량{" "}

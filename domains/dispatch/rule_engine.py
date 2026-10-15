@@ -16,6 +16,9 @@ from .models import Instance, Order, Worker, hhmm_to_min, min_to_hhmm, road_dist
 # 난이도 → 필요한 자격. 난이도 값과 자격 이름이 같다 (outdoor, none은 자격 불필요).
 REQUIRED_CERT = {"pole": "pole", "high_risk": "high_risk"}
 
+# 작업유형 표시 이름 (근거 문구용)
+WORK_TYPE_LABEL = {"install": "개통", "repair": "장애"}
+
 # validate가 일정에 반영하는 상태. blocked·failed는 배정되지 않은 것으로 본다.
 PLACED_STATUSES = {"success", "pending_approval"}
 
@@ -100,6 +103,10 @@ def validate(inst: Instance, decisions: list[DecisionRecord], params: dict) -> l
         if order.media not in worker.skills:
             violations.append(Violation(d.item_id, "skill_required",
                                         f"{worker.id}는 {order.media} 기술이 없음 (보유: {worker.skills})"))
+        if order.work_type not in worker.work_types:
+            violations.append(Violation(d.item_id, "work_type_required",
+                                        f"{worker.id}는 {WORK_TYPE_LABEL.get(order.work_type, order.work_type)} "
+                                        f"역량이 없음 (보유: {worker.work_types})"))
         cert = REQUIRED_CERT.get(order.difficulty)
         if cert and cert not in worker.certs:
             violations.append(Violation(d.item_id, "cert_required",
@@ -172,13 +179,14 @@ def _fail(inst: Instance, order: Order, code: str, evidence: str) -> DecisionRec
                           evidence=evidence, dims=dims_of(inst, order))
 
 
-def eligible_workers(inst: Instance, order: Order) -> tuple[list[Worker], list[Worker], list[Worker]]:
-    """(소속 지점 작업자, 기술 보유자, 기술·자격 보유자)."""
+def eligible_workers(inst: Instance, order: Order) -> tuple[list[Worker], list[Worker], list[Worker], list[Worker]]:
+    """(소속 지점 작업자, 기술 보유자, 기술·개통/AS 역량 보유자, 기술·역량·자격 보유자)."""
     pool = [w for w in inst.workers if w.branch == order.branch]
     skilled = [w for w in pool if order.media in w.skills]
+    capable = [w for w in skilled if order.work_type in w.work_types]
     cert = REQUIRED_CERT.get(order.difficulty)
-    certified = [w for w in skilled if cert is None or cert in w.certs]
-    return pool, skilled, certified
+    certified = [w for w in capable if cert is None or cert in w.certs]
+    return pool, skilled, capable, certified
 
 
 def stage_slots(inst: Instance, order: Order, stage: int, certified: list[Worker],
@@ -233,13 +241,17 @@ def _assign_one(inst: Instance, order: Order, params: dict,
                 schedules: dict[str, list[Job]]) -> DecisionRecord:
     params = effective_params(inst, order, params)
     dur = duration_min(order, params)
-    pool, skilled, certified = eligible_workers(inst, order)
+    pool, skilled, capable, certified = eligible_workers(inst, order)
     cert = REQUIRED_CERT.get(order.difficulty)
-    funnel = f"후보: {inst.branches[order.branch].name}지점({order.branch}) {len(pool)}명 → {order.media} 기술 {len(skilled)}명"
+    kind = WORK_TYPE_LABEL.get(order.work_type, order.work_type)
+    funnel = (f"후보: {inst.branches[order.branch].name}지점({order.branch}) {len(pool)}명 → {order.media} 기술 "
+              f"{len(skilled)}명 → {kind} 역량 {len(capable)}명")
     if cert:
         funnel += f" → {cert} 자격 {len(certified)}명"
     if not skilled:
         return _fail(inst, order, "NO_SKILL", f"{funnel}. 기술 보유자 없음")
+    if not capable:
+        return _fail(inst, order, "NO_WORK_TYPE", f"{funnel}. {kind} 역량 보유자 없음")
     if not certified:
         return _fail(inst, order, "NO_CERT", f"{funnel}. 자격 보유자 없음")
 
