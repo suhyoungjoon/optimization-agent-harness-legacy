@@ -16,24 +16,31 @@ export default function DispatchMap({ instance, decisions, reasonLabels, reasonD
   const inst = instance as Instance;
   const records = useMemo(() => new Map(decisions.map((d) => [d.item_id, d])), [decisions]);
   // 실행 범위에 들어 있는 날짜만 고를 수 있다
+  // 배정일: 결정에 day가 있으면 그날(희망일보다 늦게 잡은 건), 없으면 희망일
+  const dayOf = useMemo(() => {
+    return (o: Order) => {
+      const d = records.get(o.id)?.decision;
+      return d && typeof d.day === "number" ? d.day : o.day;
+    };
+  }, [records]);
   const days = useMemo(() => {
-    const inRun = new Set(inst.orders.filter((o) => records.has(o.id)).map((o) => o.day));
+    const inRun = new Set(inst.orders.filter((o) => records.has(o.id)).map(dayOf));
     return [...inRun].sort((a, b) => a - b);
-  }, [inst, records]);
+  }, [inst, records, dayOf]);
   const lit = useMemo(() => (highlight ? new Set(highlight) : null), [highlight]);
   // 강조 항목이 있으면 강조 항목이 가장 많은 날을 기본으로 보여준다
   const litDay = useMemo(() => {
     if (!lit) return null;
     const counts = new Map<number, number>();
-    for (const o of inst.orders) if (lit.has(o.id)) counts.set(o.day, (counts.get(o.day) ?? 0) + 1);
+    for (const o of inst.orders) if (lit.has(o.id)) counts.set(dayOf(o), (counts.get(dayOf(o)) ?? 0) + 1);
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  }, [inst, lit]);
+  }, [inst, lit, dayOf]);
   const [dayChoice, setDay] = useState<number | null>(null);
   const day = dayChoice !== null && days.includes(dayChoice) ? dayChoice : (litDay ?? days[0] ?? 1);
   const [hover, setHover] = useState<Hover | null>(null);
   const [tiles, setTiles] = useState(true);
 
-  const orders = useMemo(() => inst.orders.filter((o) => o.day === day && records.has(o.id)), [inst, day, records]);
+  const orders = useMemo(() => inst.orders.filter((o) => dayOf(o) === day && records.has(o.id)), [inst, day, records, dayOf]);
   const branchName = (b: string) => `${inst.branches[b]?.name ?? b}지점`;
 
   // 작업자별 당일 경로: 작업자 좌표 → 배정된 지시서를 시작 시각 순으로
