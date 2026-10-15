@@ -57,3 +57,20 @@ P4:
     dims: {area_zone: boundary}
     reason_codes: [OUT_OF_AREA]
     param_hint: matching.area_extension_km
+
+P5:
+  name: 근무시간 연장 미반영
+  generation:
+    description: 10시 출근조에서 09시 출근으로 바뀐 작업자의 09~10시 시간역량이 N으로 남음 (늘어난 근무시간은 연동하지 않음)
+    worker_share: 0.2
+    hidden: ["09:00", "10:00"]     # 근무시간에는 들어 있지만 시간역량은 매일 N인 구간
+  expected: 근무시간상 일할 수 있는 작업자가 09시대 배정을 받지 못해 활용률이 낮고 09시대 미할당이 늘어남
+  answer:
+    metric: worker_utilization
+    direction: low
+    requires_tools: [worker_stats]   # 작업자별 근무시간·시간역량·활용률을 근거로 인용한 발견만
+    resources:
+      kind: worker
+      truth_key: affected_workers
+      min_precision: 0.5
+    confirm_cause: true              # 원인(시간역량 미연동)이 맞는지는 사람이 판정해야 탐지로 센다

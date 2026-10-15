@@ -6,15 +6,22 @@
 #   fixed(고정값) / governance(승인 조건 같은 통제 설정). 없으면 policy. bounds·docs·kinds는 개선안으로 바꿀 수 없다.
 # 변경이 승인되면 version을 올리고 git 커밋으로 남긴다.
 
-version: 1
+version: 2
+
+appointment:                    # 고객 약속은 1시간 방문창: 실제 시작 시각이 속한 시간대가 약속이다
+  slot_min: 60
+  docs:
+    slot_min: 고객과 약속하는 방문 시간대 길이(분). 실제 시작(도착) 시각은 그 시간대 안 아무 때나 된다
+  bounds: {slot_min: [60, 60]}
+  kinds: {slot_min: fixed}
 
 matching:                       # 시간·지역 3단계 매칭. 인덱스 0/1/2 = 1/2/3단계, 단계가 올라갈수록 완화
-  time_window_min: [0, 30, 60]  # 고객 희망시간 대비 허용 오차(분)
+  time_window_min: [0, 60, 120] # 희망 시간대 대비 약속 시간대 허용 오차(분)
   area_extension_km: [0, 1, 3]  # 관할 구역 경계 밖으로 허용하는 거리(km)
   docs:
-    time_window_min: 고객 희망시각 대비 허용 오차(분). 1·2·3단계 순서이며 단계가 올라갈수록 넓어진다
+    time_window_min: 고객 희망 시간대와 약속 시간대(실제 시작 시각이 속한 시간대)의 허용 차이(분). 1·2·3단계 순서이며 단계가 올라갈수록 넓어진다
     area_extension_km: 작업자가 소속 관할 구역 밖으로 나가 배정받을 수 있는 거리(km). 1·2·3단계 순서
-  bounds: {time_window_min: [0, 120], area_extension_km: [0, 5]}
+  bounds: {time_window_min: [0, 180], area_extension_km: [0, 5]}
   kinds: {time_window_min: policy, area_extension_km: policy}
 
 duration:                       # 작업소요 = 작업유형 기본 소요 × 난이도 가중치 × 건물유형 가중치

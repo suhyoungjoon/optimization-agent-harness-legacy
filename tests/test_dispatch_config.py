@@ -19,8 +19,8 @@ def test_matching_has_three_stages_relaxing_monotonically():
         assert stages == sorted(stages), f"{key}는 단계가 올라갈수록 완화되어야 한다"
 
 
-def test_faults_p1_to_p4():
-    assert list(load("faults.yaml")) == ["P1", "P2", "P3", "P4"]
+def test_faults_p1_to_p5():
+    assert list(load("faults.yaml")) == ["P1", "P2", "P3", "P4", "P5"]
 
 
 def test_approval_stage_within_matching_stages():
