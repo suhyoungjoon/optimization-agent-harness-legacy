@@ -166,9 +166,9 @@ def test_work_types_mostly_both(base):
     inst, _ = base
     kinds = [tuple(w.work_types) for w in inst.workers]
     assert all(k in {("install", "repair"), ("install",), ("repair",)} for k in kinds)
-    both = sum(k == ("install", "repair") for k in kinds)
-    assert 0.7 * len(kinds) <= both < len(kinds)           # 일부만 한쪽 전담
-    assert any(k == ("install",) for k in kinds) and any(k == ("repair",) for k in kinds)
+    # 30명 × (개통만 10%, 장애만 5%) → round: 3명, 2명 (1.5는 짝수 쪽 2로 반올림). 나머지 25명은 둘 다
+    counts = {k: kinds.count(k) for k in set(kinds)}
+    assert counts == {("install", "repair"): 25, ("install",): 3, ("repair",): 2}
 
 
 def test_groups_split_each_branch(base):

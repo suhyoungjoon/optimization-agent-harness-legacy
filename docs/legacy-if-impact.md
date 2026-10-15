@@ -88,7 +88,7 @@
 
 ## 2단계 반영 결과 (#5, #10)
 
-- #5 개통/AS 역량: `Worker.work_types`(install·repair 중 가능한 것). 매체 기술과 독립이며, 기본 데이터는 둘 다 가능 85%, 개통만 10%, 장애(AS)만 5% (`dataset.yaml` `workers.work_types`).
+- #5 개통/AS 역량: `Worker.work_types`(install·repair 중 가능한 것). 매체 기술과 독립이며, 기본 데이터 비율은 개통만 10%, 장애(AS)만 5%, 나머지 둘 다 (`dataset.yaml` `workers.work_types`, 인원은 반올림이라 30명 기준 3명·2명·25명).
 - 후보 필터 순서는 지점 → 매체 기술 → 개통/AS 역량 → 자격. 역량이 없으면 미할당 사유 `NO_WORK_TYPE`, 잘못 배정하면 필수조건 위반 `work_type_required`.
 - #10 작업그룹: `Worker.group`(지점당 2개, 5명씩, 예: A1). 작업자 속성·분석(`worker_stats`의 group 필터)으로만 쓰고 후보 범위는 지점 그대로.
 - 결함 패턴은 추가하지 않았다. seed 42 규칙 agent 기준 배정률은 95.7%에서 94.6%로 내려갔고, 한쪽 전담 작업자 때문에 기술·역량을 다 갖춘 자격자가 없는 경우가 생겨 `NO_CERT`가 13건 나온다.

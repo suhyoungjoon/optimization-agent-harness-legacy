@@ -55,6 +55,7 @@ export const dispatchAdapter: DomainAdapter = {
   decisionText: (d) => `${String(d.worker_id)} ${String(d.start_time)} (${stageName(d.matching_stage)})`,
   reasonNames: {
     NO_SKILL: "기술 보유자 없음",
+    NO_WORK_TYPE: "개통/장애 역량 보유자 없음",
     NO_CERT: "자격 보유자 없음",
     NO_TIME_MATCH: "희망시간에 가능한 사람 없음",
     OUT_OF_AREA: "갈 수 있는 거리 밖",
