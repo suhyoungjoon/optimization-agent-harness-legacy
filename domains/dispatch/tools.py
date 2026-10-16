@@ -148,7 +148,10 @@ def build_tools(inst: Instance, params: dict) -> list[dict]:
     def get_worker_schedule(args: dict, ctx: ToolContext):
         w = worker_or_error(args.get("worker_id"))
         current = inst.order_index.get(ctx.item_id)
-        day = int(args["day"]) if args.get("day") is not None else (current.day if current else 1)
+        try:
+            day = int(args["day"]) if args.get("day") is not None else (current.day if current else 1)
+        except (TypeError, ValueError):
+            raise ToolError(f"day는 정수: {args.get('day')}") from None
         jobs = rule_engine.schedules_from(inst, ctx.decisions, params).get((w.id, day), [])
         return {
             "worker_id": w.id, "branch": w.branch, "group": w.group, "skills": w.skills,

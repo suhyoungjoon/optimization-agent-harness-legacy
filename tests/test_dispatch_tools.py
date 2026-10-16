@@ -63,6 +63,8 @@ def test_check_assignment(pack, small):  # noqa: F811
 def test_unknown_ids_return_error(pack, small):  # noqa: F811
     assert "error" in call(pack, small, "get_order", {"order_id": "X"}, "O1")
     assert "error" in call(pack, small, "get_worker_schedule", {"worker_id": "X"}, "O1")
+    assert "error" in call(pack, small, "get_worker_schedule", {"worker_id": "W1", "day": "내일"}, "O1")
+    assert "error" in call(pack, small, "find_candidates", {"order_id": "O1", "stage": 1, "day": 5}, "O1")
     assert "error" in call(pack, small, "find_candidates", {"order_id": "O1", "stage": 9}, "O1")
 
 
