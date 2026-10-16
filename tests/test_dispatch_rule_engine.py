@@ -8,7 +8,7 @@ import yaml
 from core.interfaces import DecisionRecord
 from domains.dispatch import rule_engine
 from domains.dispatch.generator import generate
-from domains.dispatch.models import Branch, Instance, Order, Worker, hhmm_to_min
+from domains.dispatch.models import Booking, Branch, Instance, Order, Worker, hhmm_to_min
 
 PARAMS = yaml.safe_load(
     (Path(__file__).resolve().parent.parent / "domains" / "dispatch" / "params.yaml").read_text(encoding="utf-8"))
@@ -52,11 +52,11 @@ def by_id(records):
 
 def test_solve_small_case(small):
     got = by_id(rule_engine.solve(small, PARAMS))
-    assert got["O1"].decision == {"worker_id": "W1", "start_time": "09:00", "matching_stage": 1}
-    assert got["O2"].decision == {"worker_id": "W2", "start_time": "09:00", "matching_stage": 1}
+    assert got["O1"].decision == {"worker_id": "W1", "day": 1, "start_time": "09:00", "matching_stage": 1}
+    assert got["O2"].decision == {"worker_id": "W2", "day": 1, "start_time": "09:00", "matching_stage": 1}
     # O2(09:00~09:45) 종료 후 4km 이동 8분 → 09:53. 약속 시간대는 09~10시라 희망과 같아 1단계
-    assert got["O3"].decision == {"worker_id": "W2", "start_time": "09:53", "matching_stage": 1}
-    assert got["O9"].decision == {"worker_id": "W1", "start_time": "15:00", "matching_stage": 1}
+    assert got["O3"].decision == {"worker_id": "W2", "day": 1, "start_time": "09:53", "matching_stage": 1}
+    assert got["O9"].decision == {"worker_id": "W1", "day": 1, "start_time": "15:00", "matching_stage": 1}
     expected_fail = {"O4": "NO_SKILL", "O5": "NO_CERT", "O6": "OUT_OF_AREA",
                      "O7": "NO_TIME_MATCH", "O8": "CAPACITY"}
     for oid, code in expected_fail.items():
@@ -70,7 +70,7 @@ def test_solve_records_evidence_and_dims(small):
     assert "1단계" in got["O3"].evidence and "W2" in got["O3"].evidence
     assert got["O6"].dims["area_zone"] == "boundary"
     assert got["O1"].dims == {"branch": "A", "hour": "09", "work_type": "install", "media": "FTTx",
-                              "building_type": "house", "difficulty": "none", "area_zone": "core"}
+                              "building_type": "house", "difficulty": "none", "area_zone": "core", "urgent": "no"}
     assert got["O3"].metrics["duration_min"] == 90
 
 
@@ -112,11 +112,11 @@ def test_validate_counts_pending_approval(small):
     assert rule_engine.validate(small, [decide("O4", "W1", "10:00", status="pending_approval")], PARAMS)
 
 
-@pytest.mark.parametrize("faults", [[], ["P1", "P2", "P3", "P4"]])
+@pytest.mark.parametrize("faults", [[], ["P1", "P2", "P3", "P4", "P5"]])
 def test_solve_full_dataset_has_no_violations(faults):
     inst, _ = generate(42, faults)
     records = rule_engine.solve(inst, PARAMS)
-    assert len(records) == len(inst.orders)
+    assert len(records) == len(inst.backlog())                     # 미예약 건만 배정한다
     assert rule_engine.validate(inst, records, PARAMS) == []
 
 
@@ -130,10 +130,10 @@ def test_solve_skips_capacity_gap(small):
     small.workers[0].skills = ["CATV"]                  # W1은 후보에서 뺀다
     small.orders = [order("P1", "12:00", 8, 8)]
     got = rule_engine.solve(small, PARAMS)[0]
-    assert got.decision == {"worker_id": "W2", "start_time": "11:00", "matching_stage": 2}
+    assert got.decision == {"worker_id": "W2", "day": 1, "start_time": "11:00", "matching_stage": 2}
     small.orders = [order("P2", "12:00", 8, 8, work_type="install", difficulty="pole")]   # 90분: 11시엔 N에 걸림
     got = rule_engine.solve(small, PARAMS)[0]
-    assert got.decision == {"worker_id": "W2", "start_time": "13:00", "matching_stage": 2}
+    assert got.decision == {"worker_id": "W2", "day": 1, "start_time": "13:00", "matching_stage": 2}
 
 
 def test_actual_stage_uses_appointment_slots(small):
@@ -198,3 +198,60 @@ def test_validate_uses_assigned_workers_duration(small):
 def test_solve_is_deterministic():
     inst, _ = generate(7, ["P1"])
     assert rule_engine.solve(inst, PARAMS) == rule_engine.solve(inst, PARAMS)
+
+
+# --- 기할당(#6), 날짜 미루기, 긴급(#1) -------------------------------------------------
+
+def two_days(small):
+    small.days = 2
+    return small
+
+
+def test_fixed_bookings_are_not_items_and_block_the_schedule(small):
+    small.orders = [order("F1", "09:00", 2, 3), order("P1", "09:00", 2, 3)]
+    small.workers[1].skills = ["HFC"]                               # FTTx는 W1뿐
+    small.fixed = {"F1": Booking("W1", 1, hhmm_to_min("09:00"))}    # W1 09:00~10:00 예약됨
+    got = rule_engine.solve(small, PARAMS)
+    assert [r.item_id for r in got] == ["P1"]
+    # 같은 시간대(1단계)는 기할당 뒤 10:00 이후라 09시대에 못 들어가고, 2단계(±1시간대)로 10시에 잡힌다
+    assert got[0].decision == {"worker_id": "W1", "day": 1, "start_time": "10:00", "matching_stage": 2}
+
+
+def test_validate_checks_overlap_with_fixed_booking(small):
+    small.fixed = {"O9": Booking("W1", 1, hhmm_to_min("09:00"))}
+    v = rule_engine.validate(small, [decide("O1", "W1", "09:30")], PARAMS)
+    assert [(x.rule, x.item_id) for x in v] == [("schedule_overlap", "O1")]          # 배정한 쪽에 붙는다
+    v = rule_engine.validate(small, [decide("O9", "W1", "13:00")], PARAMS)
+    assert [x.rule for x in v] == ["invalid_decision"]                               # 기할당은 다시 배정 안 함
+
+
+def test_solve_shifts_to_next_day_when_desired_day_is_full(small):
+    two_days(small)
+    small.workers[1].skills = ["HFC"]
+    small.workers[0].capacity = {1: []}                             # W1은 1일 하루 전체 N
+    small.orders = [order("P1", "09:00", 2, 3)]
+    got = rule_engine.solve(small, PARAMS)[0]
+    assert got.decision == {"worker_id": "W1", "day": 2, "start_time": "09:00", "matching_stage": 1}
+    assert "1일 미룬 2일" in got.evidence and got.metrics["day_shift"] == 1
+
+
+def test_urgent_orders_are_not_shifted_and_go_first(small):
+    two_days(small)
+    small.workers[1].skills = ["HFC"]
+    small.workers[0].capacity = {1: []}
+    small.orders = [order("P1", "09:00", 2, 3), order("P2", "10:00", 2, 3)]
+    small.orders[1].urgent = True
+    assert [o.id for o in rule_engine.processing_order(small)] == ["P2", "P1"]
+    got = {r.item_id: r for r in rule_engine.solve(small, PARAMS)}
+    assert got["P2"].status == "failed"                             # 긴급은 미루지 않는다
+    assert got["P1"].decision["day"] == 2
+
+
+def test_validate_day_range(small):
+    two_days(small)
+    ok = DecisionRecord("O1", {"worker_id": "W1", "day": 2, "start_time": "09:00"}, "success", None, "", {})
+    assert rule_engine.validate(small, [ok], PARAMS) == []
+    late = DecisionRecord("O1", {"worker_id": "W1", "day": 3, "start_time": "09:00"}, "success", None, "", {})
+    assert [x.rule for x in rule_engine.validate(small, [late], PARAMS)] == ["day_out_of_range"]   # 기간 밖
+    small.order_index["O1"].urgent = True
+    assert [x.rule for x in rule_engine.validate(small, [ok], PARAMS)] == ["day_out_of_range"]     # 긴급은 희망일만

@@ -33,10 +33,11 @@ def test_dataset_create_and_get(client):
     res = client.post("/domains/dispatch/datasets", json={"seed": 42, "faults": ["P1"]})
     assert res.status_code == 200
     ds = res.json()
-    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == 3800
-
+    # 배정 대상(items)은 예약 안 된 지시서만. 인스턴스에는 기할당까지 지시서 전체가 있다
     body = client.get(f"/domains/dispatch/datasets/{ds['id']}").json()
-    assert len(body["instance"]["orders"]) == 3800
+    assert ds["id"] == "dispatch-s42-P1" and ds["items"] == len(body["item_ids"])
+    assert len(body["instance"]["orders"]) == 2400
+    assert len(body["instance"]["fixed"]) + len(body["item_ids"]) == 2400
     assert len(body["instance"]["workers"]) == 30
     assert "truth" not in body and "affected_items" not in str(body)[:10000]
 
@@ -51,11 +52,11 @@ def test_rule_run_and_decisions(client):
     ds = client.post("/domains/dispatch/datasets", json={"seed": 7}).json()
     run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
     assert run["status"] == "done" and run["violations"] == []
-    assert run["seed"] == 7 and run["params_version"] == 3
+    assert run["seed"] == 7 and run["params_version"] == 4
 
     assert client.get(f"/runs/{run['run_id']}").json()["metrics"] == run["metrics"]
     decisions = client.get(f"/runs/{run['run_id']}/decisions").json()
-    assert len(decisions) == 3800
+    assert len(decisions) == ds["items"]
     success = [d for d in decisions if d["status"] == "success"]
     assert len(success) / len(decisions) == pytest.approx(run["metrics"]["assignment_rate"])
 

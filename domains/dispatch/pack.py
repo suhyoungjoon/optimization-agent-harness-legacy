@@ -29,8 +29,8 @@ class DispatchPack:
         return generator.generate(seed, faults)
 
     def items(self, instance: Instance) -> list[str]:
-        # 처리 순서: 날짜 → 희망시간 → ID (규칙 agent의 solve와 같은 순서)
-        return [o.id for o in sorted(instance.orders, key=lambda o: (o.day, o.desired, o.id))]
+        # 배정 대상은 미예약 지시서만 (기할당은 이미 잡힌 일정). 순서는 규칙 agent의 solve와 같다
+        return [o.id for o in rule_engine.processing_order(instance)]
 
     def solve(self, instance: Instance, params: dict) -> list[DecisionRecord]:
         return rule_engine.solve(instance, params)
@@ -61,6 +61,8 @@ class DispatchPack:
             "type": "object",
             "properties": {
                 "worker_id": {"type": "string", "description": "배정할 작업자 ID"},
+                "day": {"type": "integer", "minimum": 1,
+                        "description": "배정일. 생략하면 희망일. 희망일에 자리가 없을 때만 늦출 수 있다"},
                 "start_time": {"type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$",
                                "description": "작업 시작 시각 HH:MM"},
                 "matching_stage": {"type": "integer", "minimum": 1, "maximum": n_stages,
@@ -85,6 +87,11 @@ class DispatchPack:
         rules = params["approval_required"]
         threshold = params["cei"]["master_threshold"]
         reasons = []
+        day = rule_engine.parse_day(order, record.decision)
+        if day is None:
+            return []
+        if rules.get("day_shift") and day > order.day:
+            reasons.append(f"희망일({order.day}일)보다 {day - order.day}일 늦은 배정")
         stage = rule_engine.actual_stage(instance, order, worker, start, self.params)
         if stage is None:
             reasons.append("매칭 3단계 범위를 벗어난 배정")
@@ -94,18 +101,19 @@ class DispatchPack:
             *_, certified = rule_engine.eligible_workers(instance, order)
             schedules = rule_engine.schedules_from(instance, decisions, self.params, exclude=order.id)
             slots = rule_engine.stage_slots(instance, order, stage, certified,
-                                            lambda w: schedules.get((w.id, order.day), []), self.params)
+                                            lambda w, dd: schedules.get((w.id, dd), []), self.params, day)
             masters = sorted(s.worker.id for s in slots if s.worker.cei >= threshold)
             if masters:
                 reasons.append(f"명장 후보({', '.join(masters)})가 있는데 일반 작업자 {worker.id} 배정")
         return reasons
 
     def subset(self, instance: Instance, item_ids: list[str]) -> Instance:
-        keep = set(item_ids)
+        # 기할당은 모두 남긴다: 미룬 날의 일정도 그대로여야 한다. 날짜 번호도 원래대로
+        keep = set(item_ids) | set(instance.fixed)
         orders = [o for o in instance.orders if o.id in keep]
         return Instance(branches=instance.branches, boundary_zone_km=instance.boundary_zone_km,
-                        workers=instance.workers, orders=orders, days=len({o.day for o in orders}) or 1,
-                        geo=instance.geo)
+                        workers=instance.workers, orders=orders, days=instance.days, geo=instance.geo,
+                        fixed=instance.fixed)
 
     def analysis_tools(self, instance: Instance, decisions: list[DecisionRecord]) -> list[dict]:
         return build_analysis_tools(instance, decisions, self.params)

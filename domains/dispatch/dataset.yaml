@@ -10,9 +10,13 @@ branches:                        # 지점 ID → 표시 이름. 경계는 GeoJSO
 boundary_zone_km: 1              # 다른 지점과 맞닿은 관할 경계에서 이 거리 이내면 area_zone=boundary
 
 days: 10
-orders_per_day: 380               # 작업소요가 짧아(개통 30·장애 20분 기준) 결함이 드러날 만큼 부하를 둔다
+orders_per_day: 240               # 예약 흉내 기준 미예약(배정 대상)이 10~20%가 되는 부하
 workers_per_branch: 10
 
+urgent_share: 0.05               # 긴급 지시서 비율 (레가시 #1)
+reservation:                     # 레가시 예약 흉내 (#6 기할당): 지시서가 생긴 순서대로 희망일·희망 시간대·소속 관할 안에서만
+  time_window_min: 0             # 예약을 시도한다. 실패한 건이 미예약(배정 대상)으로 남는다. 후보 중 이동시간이 짧은 작업자로 잡는다
+  area_extension_km: 0
 day: {start: "08:00", end: "18:00"}
 worker_availability: ["09:00", "18:00"]   # 기본 근무시간
 capacity:                        # 일자별 시간역량 (레가시 #2). 일할 수 있는(Y) 구간의 경계는 unit_min 단위
@@ -36,7 +40,7 @@ orders:                          # 항목별 비율
 
 workers:
   skill_prob: {HFC: 0.5, FTTx: 0.7, CATV: 0.4}   # 기술별 보유 확률 (최소 1개 보장)
-  cert_share: {pole: 0.3, high_risk: 0.3}        # 자격 보유 비율 (지점별로 고르게 배분)
+  cert_share: {pole: 0.5, high_risk: 0.5}        # 자격 보유 비율 (지점별로 고르게 배분). 낮으면 예약이 자격자를 일반 작업으로 먼저 채워 승주·고위험이 막힌다
   cei_range: [50, 100]
   work_types:                    # 개통/AS 역량 (레가시 #5): 대부분 둘 다, 일부만 한쪽 전담. 인원은 round(전체 × 비율)
     install_only: 0.10

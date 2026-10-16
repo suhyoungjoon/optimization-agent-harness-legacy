@@ -97,7 +97,7 @@ def build_policy(pack, instance):
             return submit(item, reason=d.reason_code)
         wrong_first = order.index(item) % 3 == 1 and n == 0
         return submit(item, d.decision["worker_id"], "05:00" if wrong_first else d.decision["start_time"],
-                      d.decision["matching_stage"])
+                      d.decision["matching_stage"], day=d.decision.get("day"))
 
     return policy
 

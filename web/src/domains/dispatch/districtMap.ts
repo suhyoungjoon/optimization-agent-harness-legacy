@@ -29,6 +29,7 @@ export interface Order {
   desired: number;
   x: number;
   y: number;
+  urgent?: boolean;
 }
 export interface Branch {
   name: string;
@@ -40,6 +41,8 @@ export interface Instance {
   workers: Worker[];
   orders: Order[];
   days: number;
+  // 기할당: 지시서 ID → 예약으로 이미 잡힌 일정. 나머지가 배정 대상(미예약)
+  fixed?: Record<string, { worker_id: string; day: number; start: number }>;
 }
 
 const BRANCH_SLOT: Record<string, number> = { A: 1, B: 2, C: 3 };

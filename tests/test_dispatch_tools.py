@@ -46,7 +46,7 @@ def test_travel_and_schedule(pack, small):  # noqa: F811
     assert call(pack, small, "get_travel_time", {"worker_id": "W2", "order_id": "O3"}, "O3", before) == \
         {"from": "O2", "travel_min": 8}
     sched = call(pack, small, "get_worker_schedule", {"worker_id": "W2"}, "O3", before)
-    assert sched["jobs"] == [{"order_id": "O2", "start": "09:00", "end": "09:45", "x": 5, "y": 5}]
+    assert sched["jobs"] == [{"order_id": "O2", "start": "09:00", "end": "09:45", "x": 5, "y": 5, "fixed": False}]
     assert sched["certs"] == ["pole"] and sched["master"] is False
     assert sched["work_types"] == ["install", "repair"] and sched["group"] == ""
     assert sched["available"] == ["09:00", "18:00"]
@@ -63,6 +63,8 @@ def test_check_assignment(pack, small):  # noqa: F811
 def test_unknown_ids_return_error(pack, small):  # noqa: F811
     assert "error" in call(pack, small, "get_order", {"order_id": "X"}, "O1")
     assert "error" in call(pack, small, "get_worker_schedule", {"worker_id": "X"}, "O1")
+    assert "error" in call(pack, small, "get_worker_schedule", {"worker_id": "W1", "day": "내일"}, "O1")
+    assert "error" in call(pack, small, "find_candidates", {"order_id": "O1", "stage": 1, "day": 5}, "O1")
     assert "error" in call(pack, small, "find_candidates", {"order_id": "O1", "stage": 9}, "O1")
 
 
@@ -80,9 +82,10 @@ def test_subset_one_day(pack):
     inst, _ = generate(42, [])
     day1 = [i for i in pack.items(inst) if i.startswith("D01-")]
     sub = pack.subset(inst, day1)
-    assert len(sub.orders) == 380 and sub.days == 1
+    # 고른 미예약 건 + 기할당 전부(미룬 날의 일정도 그대로여야 하므로), 날짜 범위는 원래대로
+    assert set(pack.items(sub)) == set(day1) and set(sub.fixed) == set(inst.fixed) and sub.days == inst.days
     records = pack.solve(sub, pack.params)
-    assert len(records) == 380 and pack.validate(sub, records) == []
+    assert len(records) == len(day1) and pack.validate(sub, records) == []
     assert 0 < pack.metrics(sub, records)["worker_utilization"] < 1
 
 

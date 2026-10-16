@@ -15,7 +15,7 @@ export const dispatchAdapter: DomainAdapter = {
     fieldLabels: {
       id: "ID", name: "이름", day: "날짜", branch: "지점", work_type: "작업유형", media: "매체", difficulty: "난이도",
       building_type: "건물유형", desired: "희망시간", x: "x(km)", y: "y(km)", skills: "기술", certs: "자격", cei: "CEI",
-      work_types: "개통/AS 역량", group: "작업그룹", std_min: "표준작업시간",
+      work_types: "개통/AS 역량", group: "작업그룹", std_min: "표준작업시간", urgent: "긴급",
       available: "근무시간", capacity: "시간역량(일자별)",
     },
     format: (_table, field, value) => {
@@ -40,21 +40,24 @@ export const dispatchAdapter: DomainAdapter = {
   tradeoff: { axes: ["matching.area_extension_km[2]", "matching.time_window_min[2]"], metrics: ["assignment_rate", "on_time_rate"] },
   metrics: [
     { key: "assignment_rate", label: "배정 성공률", format: "pct", headline: true, primary: true, better: "up",
-      tech: "할당성공률: 배정된 지시서 ÷ 전체 지시서" },
+      tech: "할당성공률: 배정된 미예약 지시서 ÷ 전체 미예약 지시서 (예약으로 이미 잡힌 기할당은 제외)" },
     { key: "desired_time_match_rate", label: "희망시간 준수율", format: "pct", headline: true, better: "up",
-      tech: "희망시간 일치율: 배정된 지시서 중 약속 시간대(실제 시작 시각이 속한 1시간)가 고객 희망 시간대와 같은 비율" },
+      tech: "희망시간 일치율: 배정된 지시서 중 희망일에, 약속 시간대(실제 시작 시각이 속한 1시간)가 희망 시간대와 같게 잡은 비율" },
     { key: "on_time_rate", label: "정시 배정 비율", format: "pct", better: "up",
-      tech: "희망 시간대에 약속된 지시서 ÷ 전체 지시서 (배정이 늘어도 착시가 없는 정시 서비스 기준)" },
+      tech: "희망일·희망 시간대에 약속된 지시서 ÷ 전체 미예약 지시서 (배정이 늘어도 착시가 없는 정시 서비스 기준)" },
+    { key: "day_shift_share", label: "날짜 미룬 배정", format: "pct", better: "down",
+      tech: "배정한 지시서 중 희망일보다 늦은 날로 잡은 비율 (희망일에 3단계까지 자리가 없을 때만 미룸)" },
     { key: "avg_travel_min", label: "평균 이동시간", format: "min", headline: true, better: "down",
       tech: "직전 위치에서 지시서까지 이동시간 평균 (직선거리 × 우회계수 ÷ 평균 속도)" },
     { key: "worker_utilization", label: "작업자 가동률", format: "pct", better: "up",
-      tech: "작업자 활용률: 작업 시간 합 ÷ 작업자 가능시간 합" },
+      tech: "작업자 활용률: 작업 시간 합(기할당 포함) ÷ 작업자 시간역량 합" },
     { key: "stage_1_share", label: "조건 그대로 배정", format: "pct", tech: "1단계 매칭 비율 (시간·지역 조건 완화 없음)" },
     { key: "stage_2_share", label: "조금 완화해 배정", format: "pct", tech: "2단계 매칭 비율 (시간·지역 조건을 한 단계 완화)" },
     { key: "stage_3_share", label: "많이 완화해 배정", format: "pct", tech: "3단계 매칭 비율 (시간·지역 조건을 최대로 완화)" },
   ],
   valueNames: LABELS,
-  decisionText: (d) => `${String(d.worker_id)} ${String(d.start_time)} (${stageName(d.matching_stage)})`,
+  decisionText: (d) =>
+    `${String(d.worker_id)} ${typeof d.day === "number" ? `${d.day}일 ` : ""}${String(d.start_time)} (${stageName(d.matching_stage)})`,
   reasonNames: {
     NO_SKILL: "기술 보유자 없음",
     NO_WORK_TYPE: "개통/장애 역량 보유자 없음",

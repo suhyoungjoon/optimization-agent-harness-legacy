@@ -53,6 +53,14 @@ class Order:
     desired: int                   # 고객 희망시간 (분)
     x: float
     y: float
+    urgent: bool = False           # 긴급 여부 (레가시 #1). 처리 순서를 앞당긴다
+
+
+@dataclass
+class Booking:                     # 기할당 (레가시 #6): 예약으로 이미 잡힌 일정. 옮기지 않는다
+    worker_id: str
+    day: int
+    start: int                     # 시작 시각 (분)
 
 
 @dataclass
@@ -69,6 +77,11 @@ class Instance:
     orders: list[Order]
     days: int
     geo: dict                              # km 평면 ↔ 위경도: {"origin": [경도, 위도], "km_per_deg": [x, y]}
+    fixed: dict[str, Booking] = field(default_factory=dict)   # 지시서 ID → 기할당. 나머지가 배정할 미예약 건
+
+    def backlog(self) -> list[Order]:
+        """배정할 미예약 지시서 (기할당이 아닌 것)."""
+        return [o for o in self.orders if o.id not in self.fixed]
 
     def active_days(self) -> list[int]:
         """지시서가 있는 날짜 (subset이면 원래 날짜 번호 그대로)."""

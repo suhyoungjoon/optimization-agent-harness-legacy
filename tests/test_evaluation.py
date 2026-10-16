@@ -28,7 +28,8 @@ def rule_like(pack, dataset, scope):
     def policy(item, n, messages, tools):
         d = answers[item]
         if d.decision:
-            return submit(item, d.decision["worker_id"], d.decision["start_time"], d.decision["matching_stage"])
+            return submit(item, d.decision["worker_id"], d.decision["start_time"], d.decision["matching_stage"],
+                          day=d.decision.get("day"))
         return submit(item, reason=d.reason_code)
     return FakeLLM(policy)
 
@@ -42,7 +43,11 @@ def test_rule_and_ai_runs_on_same_scope(env):
     rule, ai = store.get_run(rule_id), store.get_run(ai_id)
     assert rule["scope"] == scope and ai["scope"] == scope
     assert ai["agent"] == "ai" and ai["level"] == "L5" and ai["model"] == "fake-model"
-    assert ai["metrics"]["assignment_rate"] == pytest.approx(rule["metrics"]["assignment_rate"])
+    # 같은 답을 냈다. L5는 가드레일이 있어 3단계 매칭·일반 작업자 배정은 승인 대기로 남는다
+    placed = lambda run_id: {d["item_id"]: d["decision"] for d in store.get_decisions(run_id)  # noqa: E731
+                             if d["status"] in ("success", "pending_approval")}
+    assert placed(ai_id) == placed(rule_id)
+    assert ai["metrics"]["assignment_rate"] <= rule["metrics"]["assignment_rate"]
     assert ai["violations"] == [] and len(store.get_decisions(ai_id)) == 8
     assert ai["meta"]["usage"]["calls"] == 8 and ai["meta"]["usage"]["cost_usd"] is None  # fake-model은 단가 없음
     assert progress[-1] == (8, 8)
