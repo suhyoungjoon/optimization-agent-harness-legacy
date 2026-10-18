@@ -100,7 +100,7 @@ def export(inst: Instance, truth: dict | None, out: str | Path, base_date: date 
 
     for name, data in rows.items():
         with (out / name).open("w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
+            writer = csv.writer(f, lineterminator="\n")
             writer.writerow(COLUMNS[name])
             writer.writerows(data)
     manifest = {"format": FORMAT, "version": VERSION, "base_date": base_date.isoformat(), "days": inst.days}
