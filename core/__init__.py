@@ -27,7 +27,8 @@ from core.llm.client import AnthropicClient, LLMClient, LLMResponse, ResponseCac
 from core.llm.tool_loop import LoopResult, run_tool_loop, usage_dict
 from core.params import (KINDS, apply_overrides, check_params, get_path, kind_errors, param_kind, params_view,
                          parse_path, path_errors, set_path)
-from core.registry import list_domains, list_faults, load_faults, load_pack, load_params, load_perspectives
+from core.registry import (build_instance, list_domains, list_faults, load_faults, load_pack, load_params,
+                           load_perspectives)
 from core.storage.store import Store, dataset_id, to_jsonable
 
 __all__ = [
@@ -37,7 +38,7 @@ __all__ = [
     "KINDS", "apply_overrides", "check_params", "get_path", "kind_errors", "param_kind", "params_view", "parse_path",
     "path_errors", "set_path",
     # 도메인 팩 로딩 (core.registry)
-    "list_domains", "list_faults", "load_faults", "load_pack", "load_params", "load_perspectives",
+    "build_instance", "list_domains", "list_faults", "load_faults", "load_pack", "load_params", "load_perspectives",
     # 하네스 (core.harness)
     "CORE_REASON_CODES", "AbortRun", "HarnessRunner", "Level", "RunOutput", "Tracer", "get_level", "load_levels",
     # LLM (core.llm)

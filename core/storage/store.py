@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS datasets (
     seed INTEGER NOT NULL,
     faults TEXT NOT NULL,
     items INTEGER NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    source TEXT                -- [4-a 추가] 원천 파일 이름. 없으면 생성기(seed, faults)로 만든 데이터셋
 );
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
@@ -103,7 +104,9 @@ def to_jsonable(obj: Any) -> Any:
     return obj
 
 
-def dataset_id(domain: str, seed: int, faults: list[str]) -> str:
+def dataset_id(domain: str, seed: int, faults: list[str], source: str | None = None) -> str:
+    if source:
+        return f"{domain}-src-{source}"
     return f"{domain}-s{seed}-{'-'.join(sorted(faults)) or 'clean'}"
 
 
@@ -119,14 +122,21 @@ class Store:
         for col, kind in RUN_COLUMNS.items():
             if col not in existing:
                 self.conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {kind}")
+        if "source" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(datasets)")}:
+            self.conn.execute("ALTER TABLE datasets ADD COLUMN source TEXT")
 
     # --- datasets ---
-    def save_dataset(self, domain: str, seed: int, faults: list[str], items: int) -> dict:
-        ds_id = dataset_id(domain, seed, faults)
+    def save_dataset(self, domain: str, seed: int, faults: list[str], items: int,
+                     source: str | None = None) -> dict:
+        """source가 있으면 원천 파일로 만든 데이터셋 (seed·faults는 쓰지 않는다)."""
+        if source:
+            seed, faults = 0, []
+        ds_id = dataset_id(domain, seed, faults, source)
         with self.lock, self.conn:
             self.conn.execute(
-                "INSERT OR IGNORE INTO datasets VALUES (?, ?, ?, ?, ?, ?)",
-                (ds_id, domain, seed, json.dumps(sorted(faults)), items, time.time()))
+                "INSERT OR IGNORE INTO datasets (id, domain, seed, faults, items, created_at, source)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ds_id, domain, seed, json.dumps(sorted(faults)), items, time.time(), source))
         return self.get_dataset(ds_id)
 
     def get_dataset(self, ds_id: str) -> dict | None:

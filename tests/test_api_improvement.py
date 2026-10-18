@@ -328,3 +328,32 @@ def test_stored_non_policy_proposal_is_rechecked_on_simulate_and_forced_approve(
     forced = client.post(f"/proposals/{ok['id']}/approve", json={"force": True, "note": "강제"})
     assert forced.status_code == 400 and "추정값" in forced.json()["detail"]
     assert params_path.read_text(encoding="utf-8") == before                    # 규칙 파일은 그대로
+
+
+def test_legacy_source_dataset_runs_analysis_and_simulation(client, tmp_path, monkeypatch):
+    """원천 파일로 만든 데이터셋도 같은 흐름: 규칙 agent → 분석(truth.json으로 채점) → 개선안 시뮬레이션."""
+    from domains.dispatch import legacy
+    from domains.dispatch.generator import generate
+    inst, truth = generate(42, ["P4"])
+    legacy.export(inst, truth, tmp_path / "legacy" / "p4")
+    monkeypatch.setenv("LEGACY_DATA_DIR", str(tmp_path / "legacy"))
+    ds = client.post("/domains/dispatch/datasets", json={"source": "p4"}).json()
+    run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
+    report = wait(client, f"/analysis/{client.post('/analysis', json={'run_id': run['run_id']}).json()['id']}")
+    assert report["status"] == "done" and report["score"]["detected"] == 1      # truth.json의 P4로 채점
+    batch = wait(client, f"/proposals/batches/{client.post('/proposals', json={'report_id': report['id']}).json()['id']}")
+    ok = batch["proposals"][0]
+    sim = client.post(f"/proposals/{ok['id']}/simulate", json={}).json()
+    assert sim["simulation"]["after"]["assignment_rate"] > sim["simulation"]["before"]["assignment_rate"]
+
+
+def test_legacy_source_without_truth_is_not_scored(client, tmp_path, monkeypatch):
+    from domains.dispatch import legacy
+    from domains.dispatch.generator import generate
+    inst, _ = generate(42, ["P4"])
+    legacy.export(inst, None, tmp_path / "legacy" / "plain")
+    monkeypatch.setenv("LEGACY_DATA_DIR", str(tmp_path / "legacy"))
+    ds = client.post("/domains/dispatch/datasets", json={"source": "plain"}).json()
+    run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule"}).json()
+    report = wait(client, f"/analysis/{client.post('/analysis', json={'run_id': run['run_id']}).json()['id']}")
+    assert report["status"] == "done" and report["score"]["total"] == 0

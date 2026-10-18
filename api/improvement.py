@@ -28,7 +28,7 @@ from core.improvement.proposer import finding_slices, propose
 from core.improvement.simulate import simulate_params
 from core.improvement.sweep import sensitivity, sweep_params
 from core.interfaces import DecisionRecord
-from core.registry import load_pack, load_params, load_perspectives
+from core.registry import build_instance, load_pack, load_params, load_perspectives
 from core.storage.store import Store
 
 from .replay import equivalent_run_ids
@@ -91,7 +91,7 @@ def _run_context(store: Store, run_id: str):
         raise HTTPException(400, "끝난 실행만 분석할 수 있음")
     dataset = store.get_dataset(run["dataset_id"])
     pack = load_pack(run["domain"])
-    instance, truth = pack.generate(dataset["seed"], dataset["faults"])
+    instance, truth = build_instance(pack, dataset)
     if run.get("scope"):
         instance = pack.subset(instance, run["scope"])
     decisions = [DecisionRecord(**d) for d in store.get_decisions(run_id)]
@@ -137,7 +137,7 @@ def register(app: FastAPI, ctx: Context) -> None:
             raise HTTPException(404, f"unknown dataset: {dataset_id}")
         params = load_params(load_pack(dataset["domain"]))
         pack = load_pack(dataset["domain"], params)
-        instance, _truth = pack.generate(dataset["seed"], dataset["faults"])
+        instance, _truth = build_instance(pack, dataset)
         return dataset, params, instance, (lambda p: load_pack(dataset["domain"], p))
 
     def _cached(key: str, compute):
