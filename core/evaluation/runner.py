@@ -11,12 +11,12 @@ from core.harness.levels import get_level
 from core.harness.runner import HarnessRunner
 from core.interfaces import DomainPack
 from core.llm.client import LLMClient
-from core.registry import load_params
+from core.registry import build_instance, load_params
 from core.storage.store import Store
 
 
 def _instance(pack: DomainPack, dataset: dict, scope: list[str] | None):
-    instance, _truth = pack.generate(dataset["seed"], dataset["faults"])
+    instance, _truth = build_instance(pack, dataset)
     return pack.subset(instance, scope) if scope is not None else instance
 
 

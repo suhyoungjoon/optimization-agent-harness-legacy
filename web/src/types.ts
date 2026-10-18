@@ -66,6 +66,7 @@ export interface Dataset {
   seed: number;
   faults: string[];
   items: number;
+  source?: string | null;   // 원천 파일 이름 (레가시 형식 폴더). 없으면 생성기(seed, faults)
   instance?: unknown;
   item_ids?: string[];
 }

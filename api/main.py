@@ -25,7 +25,8 @@ from core.harness.levels import load_levels
 from core.harness.runner import CORE_REASON_CODES
 from core.improvement.changes import spec_sections
 from core.llm.client import AnthropicClient, LLMClient, load_config
-from core.registry import list_domains, list_faults, load_faults, load_pack, load_params, set_domain_files_root
+from core.registry import (build_instance, list_domains, list_faults, load_faults, load_pack, load_params,
+                           set_domain_files_root)
 from core.storage.store import Store, to_jsonable
 
 from workflow.agents.api import register as register_agents
@@ -40,8 +41,9 @@ WEB_DIST = ROOT / "web" / "dist"
 
 
 class DatasetRequest(BaseModel):
-    seed: int
+    seed: int | None = None
     faults: list[str] = Field(default_factory=list)
+    source: str | None = None      # 원천 파일 이름 (도메인이 정한 폴더). 주면 seed·faults 대신 읽는다
 
 
 class RunRequest(BaseModel):
@@ -158,11 +160,18 @@ def create_app(db_path: str | Path | None = None, serve_web: bool = True,
     @app.post("/domains/{domain}/datasets")
     def create_dataset(domain: str, req: DatasetRequest):
         pack = pack_or_404(domain)
+        if req.source is None and req.seed is None:
+            raise HTTPException(400, "seed 또는 source가 필요하다")
         try:
-            instance, _truth = pack.generate(req.seed, req.faults)
+            if req.source is not None:
+                if not hasattr(pack, "load"):
+                    raise HTTPException(400, f"{domain} 도메인은 원천 파일을 읽지 않는다")
+                instance, _truth = pack.load(req.source)
+            else:
+                instance, _truth = pack.generate(req.seed, req.faults)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
-        return store.save_dataset(domain, req.seed, req.faults, len(pack.items(instance)))
+        return store.save_dataset(domain, req.seed or 0, req.faults, len(pack.items(instance)), source=req.source)
 
     @app.get("/domains/{domain}/datasets/{dataset_id}")
     def get_dataset(domain: str, dataset_id: str):
@@ -170,7 +179,7 @@ def create_app(db_path: str | Path | None = None, serve_web: bool = True,
         dataset = store.get_dataset(dataset_id)
         if dataset is None or dataset["domain"] != domain:
             raise HTTPException(404, f"unknown dataset: {dataset_id}")
-        instance, _truth = pack.generate(dataset["seed"], dataset["faults"])  # 정답표는 노출하지 않는다
+        instance, _truth = build_instance(pack, dataset)  # 정답표는 노출하지 않는다
         return {**dataset, "instance": to_jsonable(instance), "item_ids": pack.items(instance)}
 
     @app.get("/domains/{domain}/params")
@@ -206,7 +215,7 @@ def create_app(db_path: str | Path | None = None, serve_web: bool = True,
             raise HTTPException(404, f"unknown dataset: {req.dataset_id}")
         pack = pack_or_404(dataset["domain"])
         if req.scope is not None:
-            instance, _ = pack.generate(dataset["seed"], dataset["faults"])
+            instance, _ = build_instance(pack, dataset)
             unknown = set(req.scope) - set(pack.items(instance))
             if unknown or not req.scope:
                 raise HTTPException(400, f"scope가 비었거나 알 수 없는 항목이 있음: {sorted(unknown)[:5]}")

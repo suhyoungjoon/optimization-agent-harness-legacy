@@ -7,7 +7,7 @@ import yaml
 from core.interfaces import DecisionRecord, Violation
 from core.registry import domain_file
 
-from . import generator, metrics, rule_engine
+from . import generator, legacy, metrics, rule_engine
 from .analysis import build_analysis_tools
 from .models import Instance
 from .tools import build_tools
@@ -27,6 +27,10 @@ class DispatchPack:
 
     def generate(self, seed: int, faults: list[str]) -> tuple[Instance, dict]:
         return generator.generate(seed, faults)
+
+    def load(self, source: str) -> tuple[Instance, dict]:
+        # 레가시 형식(I/F별 CSV) 폴더 이름. data/legacy 바로 아래만 읽는다
+        return legacy.load_dir(legacy.resolve(source))
 
     def items(self, instance: Instance) -> list[str]:
         # 배정 대상은 미예약 지시서만 (기할당은 이미 잡힌 일정). 순서는 규칙 agent의 solve와 같다

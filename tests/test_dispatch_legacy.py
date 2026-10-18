@@ -1,0 +1,146 @@
+"""dispatch 레가시 형식(I/F별 CSV) 내보내기·읽기: 왕복이 같은 인스턴스·정답표를 만들고, 잘못된 입력은 파일·행으로 알린다."""
+
+import csv
+import json
+
+import pytest
+
+from domains.dispatch import legacy
+from domains.dispatch.generator import generate
+from domains.dispatch.pack import get_pack
+
+SEED = 42
+
+
+@pytest.fixture(scope="module")
+def exported(tmp_path_factory):
+    inst, truth = generate(SEED, ["P1", "P5"])
+    out = tmp_path_factory.mktemp("legacy") / "sample"
+    legacy.export(inst, truth, out)
+    return inst, truth, out
+
+
+def test_export_writes_one_csv_per_interface(exported):
+    _, _, out = exported
+    assert sorted(p.name for p in out.iterdir()) == [
+        "bookings.csv", "capacity.csv", "manifest.json", "orders.csv", "skills.csv", "std_time.csv",
+        "truth.json", "workers.csv"]
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["format"] == "dispatch-legacy" and manifest["days"] == 10
+    with (out / "capacity.csv").open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert set(rows[0]) == {"worker_id", "date", "slot", "available"}
+    assert {r["available"] for r in rows} == {"Y", "N"}
+    assert all(r["slot"][-2:] in ("00", "30") for r in rows)          # 30분 칸
+
+
+def test_round_trip_gives_same_instance_and_truth(exported):
+    inst, truth, out = exported
+    loaded, loaded_truth = legacy.load_dir(out)
+    assert loaded == inst
+    assert loaded_truth == json.loads(json.dumps(truth))
+
+
+def test_round_trip_solves_the_same(exported):
+    inst, _, out = exported
+    pack = get_pack()
+    loaded, _ = legacy.load_dir(out)
+    assert pack.solve(loaded, pack.params) == pack.solve(inst, pack.params)
+
+
+def test_truth_is_optional(exported, tmp_path):
+    _, _, out = exported
+    copy = tmp_path / "no_truth"
+    copy.mkdir()
+    for p in out.iterdir():
+        if p.name != "truth.json":
+            (copy / p.name).write_bytes(p.read_bytes())
+    _, truth = legacy.load_dir(copy)
+    assert truth == {}
+
+
+def test_overlapping_bookings_are_rejected(exported, tmp_path):
+    _, _, out = exported
+    bad = tmp_path / "overlap"
+
+    def clash(rows):                      # 둘째 예약을 첫째와 같은 작업자·날짜·시각으로
+        rows[1].update(worker_id=rows[0]["worker_id"], date=rows[0]["date"], start_time=rows[0]["start_time"])
+    _rewrite(out, bad, "bookings.csv", clash)
+    with pytest.raises(ValueError) as err:
+        legacy.load_dir(bad)
+    assert "bookings.csv" in str(err.value) and "겹침" in str(err.value)
+
+
+def test_export_without_truth_removes_stale_truth(exported, tmp_path):
+    inst, truth, _ = exported
+    out = tmp_path / "again"
+    legacy.export(inst, truth, out)
+    legacy.export(inst, None, out)
+    assert not (out / "truth.json").exists() and legacy.load_dir(out)[1] == {}
+
+
+def _rewrite(src, dst, filename, edit):
+    dst.mkdir()
+    for p in src.iterdir():
+        (dst / p.name).write_bytes(p.read_bytes())
+    with (dst / filename).open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    edit(rows)
+    fields = list(rows[0])
+    with (dst / filename).open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        for row in rows:                  # None 칸은 아예 쓰지 않는다 (머리줄보다 짧은 행)
+            writer.writerow([row[k] for k in fields if row[k] is not None])
+
+
+@pytest.mark.parametrize("filename, edit, words", [
+    ("orders.csv", lambda rows: rows[2].update(branch="Z"), ["orders.csv", "4행", "branch"]),
+    ("orders.csv", lambda rows: rows[0].update(work_type="paint"), ["orders.csv", "2행", "work_type"]),
+    ("orders.csv", lambda rows: rows[1].update(desired_time="9시"), ["orders.csv", "3행", "desired_time"]),
+    ("orders.csv", lambda rows: rows[1].update(desired_date="2030-01-01"), ["orders.csv", "기간"]),
+    ("orders.csv", lambda rows: rows[1].update(order_id=rows[0]["order_id"]), ["orders.csv", "중복"]),
+    ("capacity.csv", lambda rows: rows[0].update(slot="09:15"), ["capacity.csv", "30분"]),
+    ("capacity.csv", lambda rows: rows[0].update(available="X"), ["capacity.csv", "available"]),
+    ("skills.csv", lambda rows: rows[0].update(worker_id="W??"), ["skills.csv", "작업자"]),
+    ("bookings.csv", lambda rows: rows[0].update(order_id="NOPE"), ["bookings.csv", "지시서"]),
+    ("std_time.csv", lambda rows: rows[0].update(minutes="-5"), ["std_time.csv", "minutes"]),
+    ("std_time.csv", lambda rows: rows.append(dict(rows[0])), ["std_time.csv", "중복"]),
+    ("capacity.csv", lambda rows: rows.append(dict(rows[0], available="Y")), ["capacity.csv", "중복"]),
+    ("capacity.csv", lambda rows: rows.append(dict(rows[0], slot="07:30")), ["capacity.csv", "하루 범위"]),
+    ("capacity.csv", lambda rows: rows[0].update(available="Y"), ["capacity.csv", "근무시간"]),   # 08:00 칸, 09시 출근
+    ("capacity.csv", lambda rows: rows.__delitem__(slice(0, 20)), ["capacity.csv", "없음"]),      # 첫 작업자 1일 전체
+    ("workers.csv", lambda rows: rows[0].update(work_start="07:00"), ["workers.csv", "2행", "하루 범위"]),
+    ("orders.csv", lambda rows: rows[0].update(lat="nan"), ["orders.csv", "2행", "lat"]),
+    ("orders.csv", lambda rows: rows[0].update(urgent=None), ["orders.csv", "2행", "칸"]),            # 짧은 행
+])
+def test_invalid_rows_name_file_and_line(exported, tmp_path, filename, edit, words):
+    _, _, out = exported
+    bad = tmp_path / "bad"
+    _rewrite(out, bad, filename, edit)
+    with pytest.raises(ValueError) as err:
+        legacy.load_dir(bad)
+    assert all(w in str(err.value) for w in words), str(err.value)
+
+
+@pytest.mark.parametrize("name", ["../etc", "a/b", "", ".", "x y"])
+def test_source_name_must_be_a_plain_folder_name(name):
+    with pytest.raises(ValueError):
+        legacy.resolve(name)
+
+
+def test_pack_load_reads_named_folder(exported, monkeypatch):
+    inst, truth, out = exported
+    monkeypatch.setenv("LEGACY_DATA_DIR", str(out.parent))
+    loaded, loaded_truth = get_pack().load("sample")
+    assert loaded == inst and loaded_truth["faults"].keys() == truth["faults"].keys()
+    with pytest.raises(ValueError):
+        get_pack().load("missing")
+
+
+def test_committed_sample_matches_generator():
+    """data/legacy/sample은 seed 42, P1~P5를 내보낸 것. 생성기를 바꾸면 다시 내보내야 한다:
+    python -m scripts.legacy export --seed 42 --faults P1,P2,P3,P4,P5 --name sample"""
+    loaded, truth = legacy.load_dir(legacy.REPO_DIR / "data" / "legacy" / "sample")
+    inst, expected = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
+    assert loaded == inst and truth == json.loads(json.dumps(expected))

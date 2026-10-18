@@ -5,6 +5,7 @@
 
 import importlib
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -62,3 +63,10 @@ def load_perspectives(pack: DomainPack) -> list[dict]:
 def list_faults(pack: DomainPack) -> list[dict]:
     """심을 수 있는 결함의 ID와 이름. 정답(answer)은 노출하지 않는다."""
     return [{"id": fid, "name": spec.get("name", fid)} for fid, spec in load_faults(pack).items()]
+
+
+def build_instance(pack: DomainPack, dataset: dict) -> tuple[Any, dict]:
+    """데이터셋의 인스턴스와 정답표. 원천 파일이 있으면 pack.load, 없으면 pack.generate(seed, faults)."""
+    if dataset.get("source"):
+        return pack.load(dataset["source"])
+    return pack.generate(dataset["seed"], dataset["faults"])

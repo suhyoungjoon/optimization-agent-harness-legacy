@@ -177,3 +177,22 @@ def test_domain_definition_lists_tools_without_handlers(client):
 def test_harness_levels_include_llm_call_limit(client):
     llm = client.get("/harness/levels").json()["llm"]
     assert isinstance(llm["max_llm_calls_per_item"], int) and llm["max_llm_calls_per_item"] > 0
+
+
+def test_dataset_from_legacy_source(client, tmp_path, monkeypatch):
+    from domains.dispatch import legacy
+    from domains.dispatch.generator import generate
+    inst, truth = generate(42, ["P1"])
+    legacy.export(inst, truth, tmp_path / "legacy" / "sample")
+    monkeypatch.setenv("LEGACY_DATA_DIR", str(tmp_path / "legacy"))
+
+    ds = client.post("/domains/dispatch/datasets", json={"source": "sample"}).json()
+    assert ds["id"] == "dispatch-src-sample" and ds["source"] == "sample"
+    body = client.get(f"/domains/dispatch/datasets/{ds['id']}").json()
+    assert len(body["instance"]["orders"]) == len(inst.orders) and ds["items"] == len(body["item_ids"])
+    run = client.post("/runs", json={"dataset_id": ds["id"], "agent": "rule", "scope": body["item_ids"][:5]}).json()
+    assert run["status"] == "done" and run["violations"] == []
+
+    assert client.post("/domains/dispatch/datasets", json={"source": "../secret"}).status_code == 400
+    assert client.post("/domains/dispatch/datasets", json={"source": "missing"}).status_code == 400
+    assert client.post("/domains/dispatch/datasets", json={}).status_code == 400          # seed나 source 중 하나
