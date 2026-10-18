@@ -73,6 +73,8 @@ python -m scripts.snapshot export --out demo/bundle --note "..."   # 시연 번�
 python -m api.main --demo demo/bundle   # 시연 모드: 저장된 AI 결과만 재생, LLM·네트워크 없음
 python -m scripts.rehearsal_bundle      # API 키 없이 쓰는 리허설 번들 (가짜 LLM) → demo/rehearsal
 node scripts/record_demo.mjs --stills   # 시연 장면 녹화 (시연 모드 서버에 대해, runs/recordings)
+python -m scripts.legacy export --seed 42 --faults P1,P4 --name mydata   # 가상 데이터를 레가시 형식(I/F별 CSV)으로 → data/legacy/mydata
+python -m scripts.legacy load mydata    # 레가시 형식 폴더를 데이터셋(dispatch-src-mydata)으로 등록. API는 POST /domains/dispatch/datasets {"source": "mydata"}
 ```
 AI agent 실행에는 API 키가 필요하다: 환경변수 또는 `.env`의 `OAH_ANTHROPIC_API_KEY`(우선) 또는 `ANTHROPIC_API_KEY`. 모델·effort·캐시는 `configs/llm.yaml`(배정은 기본값, 분석·개선안은 `roles`의 역할별 모델), 최종 측정 때는 `LLM_CACHE=0`으로 입력 해시 캐시를 끈다. 실험할 때만 모델을 바꾸려면 `LLM_MODEL`, `LLM_THINKING`(adaptive | off), `LLM_EFFORT`(low~max | none)로 덮어쓴다 (쓴 모델은 사용량 기록 `usage.model`에 남는다).
 (명령어가 바뀌면 이 섹션을 갱신한다.)

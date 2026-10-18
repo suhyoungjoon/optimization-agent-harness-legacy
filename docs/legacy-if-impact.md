@@ -112,3 +112,33 @@
 - 결함은 구간별 미예약 비율과 최종 미처리로 드러난다: P1 B지점 9~10시 미예약 24%→45%·미처리 9%→13%, P5 A지점 09시 미예약 25%→74%·미처리 7%→27%, P2 C지점 승주 미처리 7%→100%, P4 경계 밖 고객은 전부 미예약·관할 밖 실패이고 +1km 완화로 94% 배정.
 - 희망일·희망 시간대 그대로는 예약이 이미 실패한 조건이라, 미예약 건의 `desired_time_match_rate`·`on_time_rate`는 규칙 agent에서 0에 가깝다.
 - 여러 건을 한 번에 맞추는 묶음 배정은 하지 않았다(4-b 이벤트 설계 때 코어 변경과 함께 제안).
+
+## 4-a 반영 결과: 레가시 형식 로더
+
+실데이터는 쓰지 않는다. 생성기로 만든 가상 데이터를 아래 형식으로 내보내고 다시 읽는다. 실제 레가시 명세가 오면 `domains/dispatch/legacy.py`의 칼럼 대응만 바꾼다.
+
+### 레가시 파일 형식 (v1, 폴더 하나 = 데이터셋 하나, UTF-8 CSV)
+
+`data/legacy/<이름>/` (샘플 `data/legacy/sample` = seed 42, P1~P5만 커밋, 나머지는 git 제외)
+
+| 파일 | 레가시 I/F | 칼럼 |
+|---|---|---|
+| `manifest.json` | — | `format`(dispatch-legacy), `version`(1), `base_date`(1일에 해당하는 날짜), `days` |
+| `orders.csv` | #1 접수 | `order_id, desired_date, desired_time, branch, work_type, media, difficulty, building_type, lat, lon, urgent(Y/N)` |
+| `workers.csv` | #10 구성원 | `worker_id, branch, group, cei, lat, lon, work_start, work_end` |
+| `skills.csv` | #5 기술역량 | `worker_id, kind(media·work_type·cert), value` |
+| `capacity.csv` | #2·#8·#9 시간역량 | `worker_id, date, slot(30분 칸 시작 HH:MM), available(Y/N)` |
+| `std_time.csv` | #4 표준작업시간 | `worker_id, work_type, minutes` |
+| `bookings.csv` | #6 할당이력 | `order_id, worker_id, date, start_time` |
+| `truth.json` | — | 결함 정답표 (있을 때만 분석 agent 채점) |
+
+- 날짜는 YYYY-MM-DD, 시각은 HH:MM. 코드값은 `dimensions.yaml`·`dataset.yaml`과 같다(지점 A·B·C, 작업유형 install·repair 등).
+- 좌표는 위경도로 쓰고 읽을 때 km 평면으로 바꾼다. 관할 경계는 `dataset.yaml`의 지역 설정.
+- 읽을 때 코드값·날짜 범위·30분 칸·ID 중복·참조 무결성을 검사하고, 오류는 `파일 N행: …`으로 알린다.
+
+### 코어 계약 변경 (추가만)
+- `DomainPack.load(source)` 추가.
+- `datasets` 테이블에 `source` 칸 추가(기존 DB는 자동으로 칸 추가). 원천 데이터셋 ID는 `<도메인>-src-<이름>`, seed 0.
+- 데이터셋을 다시 만드는 곳(API, 평가 러너, 분석·개선 API)은 `core.registry.build_instance(pack, dataset)` 하나를 거친다.
+- `POST /domains/{domain}/datasets`가 `{"source": "<이름>"}`도 받는다. 이름은 영문·숫자·_·-만, `data/legacy`(또는 `LEGACY_DATA_DIR`) 바로 아래 폴더만 읽는다.
+- LangGraph agents 탭(`workflow/agents`)은 아직 seed·결함으로만 데이터셋을 만든다.
