@@ -15,6 +15,7 @@
 
 import csv
 import json
+import math
 import os
 import re
 from datetime import date, timedelta
@@ -22,7 +23,9 @@ from pathlib import Path
 
 import yaml
 
-from . import generator
+from core.registry import domain_file
+
+from . import generator, rule_engine
 from .models import Booking, Instance, Order, Worker, hhmm_to_min, min_to_hhmm
 
 FORMAT = "dispatch-legacy"
@@ -107,6 +110,8 @@ def export(inst: Instance, truth: dict | None, out: str | Path, base_date: date 
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     if truth:
         (out / "truth.json").write_text(json.dumps(truth, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        (out / "truth.json").unlink(missing_ok=True)   # 같은 폴더에 남은 이전 정답표로 채점하지 않게
     return out
 
 
@@ -126,6 +131,9 @@ class _Rows:
             if missing:
                 raise ValueError(f"{name}: 칼럼 없음 {sorted(missing)}")
             self.rows = list(reader)
+        for line, row in self:                     # csv는 짧은 행의 빈칸을 None, 긴 행의 남는 칸을 None 키로 준다
+            if None in row or any(v is None for v in row.values()):
+                raise self.error(line, f"칸 수가 머리줄({len(COLUMNS[name])}칸)과 다름")
 
     def __iter__(self):
         return ((i + 2, row) for i, row in enumerate(self.rows))
@@ -142,6 +150,7 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
     allowed["branch"] = set(cfg["branches"])
     certs_allowed = {"pole", "high_risk"}
     unit = cfg["capacity"]["unit_min"]
+    day0, day1 = (hhmm_to_min(cfg["day"][k]) for k in ("start", "end"))
     branches, geo = generator.load_region(cfg)
 
     try:
@@ -174,9 +183,12 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
 
     def number(rows: _Rows, line: int, column: str, text: str, kind=float):
         try:
-            return kind(text)
+            value = kind(text)
         except ValueError:
             raise rows.error(line, f"{column} 숫자 형식 오류 {text!r}") from None
+        if not math.isfinite(value):
+            raise rows.error(line, f"{column} 값이 유한한 수가 아님 {text!r}")
+        return value
 
     def code(rows: _Rows, line: int, column: str, text: str) -> str:
         if text not in allowed[column]:
@@ -193,6 +205,8 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
         start, end = (minute_of(rows, line, c, r[c]) for c in ("work_start", "work_end"))
         if start >= end:
             raise rows.error(line, "근무시작이 근무종료보다 늦음")
+        if start < day0 or end > day1:
+            raise rows.error(line, f"근무시간 {r['work_start']}~{r['work_end']}이 하루 범위 {cfg['day']} 밖")
         workers[r["worker_id"]] = Worker(
             id=r["worker_id"], branch=code(rows, line, "branch", r["branch"]), skills=[], certs=[],
             cei=number(rows, line, "cei", r["cei"], int), x=x, y=y, available=(start, end), work_types=[],
@@ -227,22 +241,40 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
         minutes = number(rows, line, "minutes", r["minutes"], int)
         if minutes <= 0:
             raise rows.error(line, f"minutes는 양수여야 함: {minutes}")
-        w.std_min[code(rows, line, "work_type", r["work_type"])] = minutes
+        work_type = code(rows, line, "work_type", r["work_type"])
+        if work_type in w.std_min:
+            raise rows.error(line, f"{w.id} {work_type} 표준작업시간 중복")
+        w.std_min[work_type] = minutes
 
-    # 일자별 시간역량: Y 칸을 이어 구간으로. 기본 근무시간과 같은 날은 적지 않는다
+    # 일자별 시간역량: Y 칸을 이어 구간으로. 기본 근무시간과 같은 날은 적지 않는다.
+    # 모든 작업자·날짜가 있어야 한다 (빠진 날을 근무시간 전체로 읽지 않게)
     rows = _Rows(folder, "capacity.csv")
     slots: dict[tuple[str, int], list[int]] = {}
+    seen_cells: set[tuple[str, int, int]] = set()
     for line, r in rows:
         w = worker_of(rows, line, r["worker_id"])
         day = day_of(rows, line, r["date"])
         slot = minute_of(rows, line, "slot", r["slot"])
         if slot % unit:
             raise rows.error(line, f"slot {r['slot']}이 {unit}분 칸 경계가 아님")
+        if slot < day0 or slot + unit > day1:
+            raise rows.error(line, f"slot {r['slot']}이 하루 범위 {cfg['day']} 밖")
         if r["available"] not in ("Y", "N"):
             raise rows.error(line, f"available 값 {r['available']!r}는 Y 또는 N")
+        if (w.id, day, slot) in seen_cells:
+            raise rows.error(line, f"{w.id} {r['date']} {r['slot']} 칸 중복")
+        seen_cells.add((w.id, day, slot))
         bucket = slots.setdefault((w.id, day), [])
         if r["available"] == "Y":
+            if slot < w.available[0] or slot + unit > w.available[1]:
+                raise rows.error(line, f"{w.id} {r['slot']} 칸이 근무시간 {min_to_hhmm(w.available[0])}~"
+                                       f"{min_to_hhmm(w.available[1])} 밖인데 Y")
             bucket.append(slot)
+    for w in workers.values():
+        for day in range(1, days + 1):
+            if (w.id, day) not in slots:
+                raise ValueError(f"capacity.csv: {w.id} {(base + timedelta(days=day - 1)).isoformat()} 행이 없음 "
+                                 f"(모든 작업자·날짜의 칸이 있어야 함)")
     for (worker_id, day), ys in slots.items():
         windows: list[tuple[int, int]] = []
         for s in sorted(ys):
@@ -273,6 +305,7 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
     # 할당이력 (예약으로 이미 잡힌 일정)
     rows = _Rows(folder, "bookings.csv")
     fixed: dict[str, Booking] = {}
+    booking_line: dict[str, int] = {}
     for line, r in rows:
         if r["order_id"] not in orders:
             raise rows.error(line, f"지시서 {r['order_id']}가 orders.csv에 없음")
@@ -281,6 +314,20 @@ def load_dir(folder: str | Path) -> tuple[Instance, dict]:
         w = worker_of(rows, line, r["worker_id"])
         fixed[r["order_id"]] = Booking(w.id, day_of(rows, line, r["date"]),
                                        minute_of(rows, line, "start_time", r["start_time"]))
+        booking_line[r["order_id"]] = line
+
+    # 같은 작업자·날짜의 예약 작업 시간이 겹치면 불가능한 일정이다 (작업소요는 커밋된 params와 표준작업시간 기준)
+    params = yaml.safe_load(domain_file("dispatch", "params.yaml", generator.PACK_DIR).read_text(encoding="utf-8"))
+    jobs: dict[tuple[str, int], list[tuple[int, int, str]]] = {}
+    for order_id, b in fixed.items():
+        end = b.start + rule_engine.duration_min(orders[order_id], params, workers[b.worker_id])
+        jobs.setdefault((b.worker_id, b.day), []).append((b.start, end, order_id))
+    for (worker_id, _day), items in jobs.items():
+        items.sort()
+        for (_s, prev_end, prev), (start, _e, nxt) in zip(items, items[1:]):
+            if start < prev_end:
+                raise rows.error(booking_line[nxt], f"{worker_id}의 {nxt} 예약이 {prev}(행 {booking_line[prev]})와 "
+                                                    f"작업 시간이 겹침")
 
     truth_path = folder / "truth.json"
     truth = json.loads(truth_path.read_text(encoding="utf-8")) if truth_path.is_file() else {}

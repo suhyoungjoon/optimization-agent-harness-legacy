@@ -123,7 +123,11 @@ class Store:
             if col not in existing:
                 self.conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {kind}")
         if "source" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(datasets)")}:
-            self.conn.execute("ALTER TABLE datasets ADD COLUMN source TEXT")
+            try:
+                self.conn.execute("ALTER TABLE datasets ADD COLUMN source TEXT")
+            except sqlite3.OperationalError as exc:      # 다른 프로세스가 먼저 추가한 경우
+                if "duplicate column" not in str(exc):
+                    raise
 
     # --- datasets ---
     def save_dataset(self, domain: str, seed: int, faults: list[str], items: int,

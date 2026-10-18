@@ -59,6 +59,26 @@ def test_truth_is_optional(exported, tmp_path):
     assert truth == {}
 
 
+def test_overlapping_bookings_are_rejected(exported, tmp_path):
+    _, _, out = exported
+    bad = tmp_path / "overlap"
+
+    def clash(rows):                      # 둘째 예약을 첫째와 같은 작업자·날짜·시각으로
+        rows[1].update(worker_id=rows[0]["worker_id"], date=rows[0]["date"], start_time=rows[0]["start_time"])
+    _rewrite(out, bad, "bookings.csv", clash)
+    with pytest.raises(ValueError) as err:
+        legacy.load_dir(bad)
+    assert "bookings.csv" in str(err.value) and "겹침" in str(err.value)
+
+
+def test_export_without_truth_removes_stale_truth(exported, tmp_path):
+    inst, truth, _ = exported
+    out = tmp_path / "again"
+    legacy.export(inst, truth, out)
+    legacy.export(inst, None, out)
+    assert not (out / "truth.json").exists() and legacy.load_dir(out)[1] == {}
+
+
 def _rewrite(src, dst, filename, edit):
     dst.mkdir()
     for p in src.iterdir():
@@ -66,10 +86,12 @@ def _rewrite(src, dst, filename, edit):
     with (dst / filename).open(encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     edit(rows)
+    fields = list(rows[0])
     with (dst / filename).open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        for row in rows:                  # None 칸은 아예 쓰지 않는다 (머리줄보다 짧은 행)
+            writer.writerow([row[k] for k in fields if row[k] is not None])
 
 
 @pytest.mark.parametrize("filename, edit, words", [
@@ -83,6 +105,14 @@ def _rewrite(src, dst, filename, edit):
     ("skills.csv", lambda rows: rows[0].update(worker_id="W??"), ["skills.csv", "작업자"]),
     ("bookings.csv", lambda rows: rows[0].update(order_id="NOPE"), ["bookings.csv", "지시서"]),
     ("std_time.csv", lambda rows: rows[0].update(minutes="-5"), ["std_time.csv", "minutes"]),
+    ("std_time.csv", lambda rows: rows.append(dict(rows[0])), ["std_time.csv", "중복"]),
+    ("capacity.csv", lambda rows: rows.append(dict(rows[0], available="Y")), ["capacity.csv", "중복"]),
+    ("capacity.csv", lambda rows: rows.append(dict(rows[0], slot="07:30")), ["capacity.csv", "하루 범위"]),
+    ("capacity.csv", lambda rows: rows[0].update(available="Y"), ["capacity.csv", "근무시간"]),   # 08:00 칸, 09시 출근
+    ("capacity.csv", lambda rows: rows.__delitem__(slice(0, 20)), ["capacity.csv", "없음"]),      # 첫 작업자 1일 전체
+    ("workers.csv", lambda rows: rows[0].update(work_start="07:00"), ["workers.csv", "2행", "하루 범위"]),
+    ("orders.csv", lambda rows: rows[0].update(lat="nan"), ["orders.csv", "2행", "lat"]),
+    ("orders.csv", lambda rows: rows[0].update(urgent=None), ["orders.csv", "2행", "칸"]),            # 짧은 행
 ])
 def test_invalid_rows_name_file_and_line(exported, tmp_path, filename, edit, words):
     _, _, out = exported
