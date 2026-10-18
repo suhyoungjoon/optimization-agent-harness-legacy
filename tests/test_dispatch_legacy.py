@@ -106,3 +106,11 @@ def test_pack_load_reads_named_folder(exported, monkeypatch):
     assert loaded == inst and loaded_truth["faults"].keys() == truth["faults"].keys()
     with pytest.raises(ValueError):
         get_pack().load("missing")
+
+
+def test_committed_sample_matches_generator():
+    """data/legacy/sample은 seed 42, P1~P5를 내보낸 것. 생성기를 바꾸면 다시 내보내야 한다:
+    python -m scripts.legacy export --seed 42 --faults P1,P2,P3,P4,P5 --name sample"""
+    loaded, truth = legacy.load_dir(legacy.REPO_DIR / "data" / "legacy" / "sample")
+    inst, expected = generate(SEED, ["P1", "P2", "P3", "P4", "P5"])
+    assert loaded == inst and truth == json.loads(json.dumps(expected))

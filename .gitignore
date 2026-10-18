@@ -26,3 +26,7 @@ web/dist/
 
 # 리허설 번들 (python -m scripts.rehearsal_bundle, 언제든 다시 만든다)
 demo/rehearsal/
+
+# 레가시 형식 데이터 (python -m scripts.legacy). 샘플만 커밋한다
+data/legacy/*
+!data/legacy/sample/
